@@ -1,7 +1,26 @@
+# Entorno
 .venv/
 .env
-data/
+.env.*
+!.env.example
+
+# Python
 __pycache__/
+*.py[cod]
+
+# Jupyter
 .ipynb_checkpoints/
+
+# Datos: crudo fuera (regenerable vía descarga_historico.ipynb), procesado dentro
+data/raw/
+reports
+
+# Trabajo local
 sandbox/
 .claude/
+app/
+
+# Sistema
+.DS_Store
+Thumbs.db
+desktop.ini
