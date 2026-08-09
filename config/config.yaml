@@ -1,0 +1,3 @@
+timezone:
+  internal: UTC            # marco de trabajo: todo el ETL y el modelo viven aquí
+  display: Europe/Madrid   # solo al pintar para humanos en el dashboard
