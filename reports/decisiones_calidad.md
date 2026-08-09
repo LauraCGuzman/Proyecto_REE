@@ -65,3 +65,16 @@ del artefacto (8.556 MW)**. Sobre la ventana de muestra, este umbral marca
 exactamente **1 fila** como implausible (`salto_implausible.sum() == 1`) — la
 del artefacto de 8.556 MW — sin falsos positivos sobre las rampas matutinas
 reales.
+
+## Pendiente — verificación de reproducibilidad del pipeline AEMET
+
+`API_aemet.ipynb`, `API_aemet_datos_faltantes.ipynb` y `merge_temperatura.ipynb`
+quedan publicados **sin salidas**: requieren credencial de AEMET, y ejecutarlos
+sobrescribiría `data/processed/df_final_zonas_temperaturas_2023_2026.parquet`.
+
+Queda sin verificar si ese parquet se regenera idéntico desde el pipeline
+actual (a diferencia de `demanda_horaria.parquet`, que sí se comprobó byte a
+byte). Comprobación pendiente para la próxima vez que haga falta reejecutar
+el pipeline AEMET: copiar el parquet actual fuera del repo antes de ejecutar,
+y comparar el nuevo contra el copiado — shape, columnas, dtypes y md5, igual
+que se hizo con `demanda_horaria.parquet`.
