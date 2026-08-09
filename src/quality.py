@@ -4,7 +4,6 @@
    2) ¿los valores son plausibles?          -> triaje_deltas (semántica)
 El 28-A pasa (1) si la telemetría siguió emitiendo, y en (2) es EVENTO, no CORRUPCION."""
 import pandas as pd
-import glob
 
 
 def validar_rejilla(df: pd.DataFrame, inicio: pd.Timestamp, fin: pd.Timestamp):
@@ -58,5 +57,26 @@ def triaje_deltas(df, col_valor="demanda_real", umbral_mw=2000):
 
     # 5. Filtrar por umbral o por valores imposibles (<= 0)
     filtro = (deltas_absolutos > umbral_mw) | (df[col_valor] <= 0)
-    
+
     return df[filtro]
+
+
+def contar_nans_por_estacion(
+    df: pd.DataFrame, columnas: list[str]
+) -> dict[str, pd.Series]:
+    """Suma los NaNs de cada columna agrupados por la estación ('indicativo')."""
+    return {
+        col: df[col].isna().groupby(df["indicativo"]).sum()
+        for col in columnas
+        if col in df.columns
+    }
+
+
+def obtener_longitud_maxima_racha(serie_bool: pd.Series) -> int:
+    """Devuelve la racha más larga de True consecutivos en una serie booleana."""
+    if not serie_bool.any():
+        return 0
+    # Creamos bloques de grupos consecutivos cada vez que cambia el valor booleano
+    bloques = (serie_bool != serie_bool.shift()).cumsum()
+    # Filtramos solo los bloques correspondientes a True (NaNs) y medimos su longitud
+    return serie_bool[serie_bool].groupby(bloques).size().max()

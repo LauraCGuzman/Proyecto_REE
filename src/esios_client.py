@@ -2,7 +2,6 @@
 import requests
 from requests.adapters import HTTPAdapter, Retry
 import pandas as pd
-import os
 import time
 from src.quality import validar_rejilla
 from pathlib import Path
@@ -28,9 +27,13 @@ def crear_sesion(token: str) -> requests.Session:
 
 def descargar_indicador(sesion: requests.Session, indicador_id: int,
 
-                       inicio: str, fin: str, nombre_col: str) -> pd.DataFrame:
+                       inicio: pd.Timestamp, fin: pd.Timestamp, nombre_col: str) -> pd.DataFrame:
 
-    """Fetch + normaliza. LANZA (raise_for_status). No valida conteo, no guarda."""
+    """Fetch + normaliza. LANZA (raise_for_status). No valida conteo, no guarda.
+
+    inicio y fin son pd.Timestamp tz-aware, no str: el cuerpo llama a
+    fin.tz_convert('UTC'), que exige un Timestamp con zona ya fijada.
+    """
 
 
     url = f"https://api.esios.ree.es/indicators/{indicador_id}"
@@ -77,12 +80,14 @@ def descargar_rango(sesion: requests.Session, indicador_id: int,
     Modula el rango de fechas en bloques mensuales completos, descarga desde la API,
     valida la estructura de 5 minutos mediante el gate de calidad y persiste en Parquet.
     
-    Exige estrictamente que fecha_inicio y fecha_fin coincidan con el inicio de un mes.
+    Contrato: fecha_inicio y fecha_fin son str y deben ser primeros de mes
+    ("YYYY-MM-01"), condición que fuerza el assert de más abajo. Cualquier otro
+    día del mes rompe la modulación en bloques mensuales completos.
     La ventana de descarga por tramo es semiabierta [inicio, fin).
     """
     RAIZ = Path(__file__).resolve().parents[1]
     ruta_carpeta = RAIZ / "data" / "raw"
-    os.makedirs(ruta_carpeta, exist_ok=True)
+    ruta_carpeta.mkdir(parents=True, exist_ok=True)
     
     # Asegurar Timestamps localizados en UTC
     ts_inicio = pd.Timestamp(fecha_inicio, tz='UTC')
@@ -102,7 +107,7 @@ def descargar_rango(sesion: requests.Session, indicador_id: int,
         anio = mes_actual_inicio.year
         mes = mes_actual_inicio.month
         
-        ruta_fichero = f"{ruta_carpeta}/{indicador_id}_{anio}-{mes:02d}.parquet"
+        ruta_fichero = ruta_carpeta / f"{indicador_id}_{anio}-{mes:02d}.parquet"
         filas_esperadas = int((mes_actual_fin - mes_actual_inicio) / pd.Timedelta(minutes=5))
         
         resultado = {
@@ -115,7 +120,7 @@ def descargar_rango(sesion: requests.Session, indicador_id: int,
         }
         
         # 1. Idempotencia defensiva
-        if os.path.exists(ruta_fichero):
+        if ruta_fichero.exists():
             try:
                 df_existente = pd.read_parquet(ruta_fichero)
                 # Validar si el fichero existente cumple con el gate estructural
