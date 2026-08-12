@@ -39,8 +39,9 @@ def raiz_proyecto(marcador="src") -> Path:
 # raiz_proyecto() se queda disponible por si algo la necesita explícitamente,
 # pero ya no decide RAIZ.
 RAIZ = Path(__file__).resolve().parents[1]
-DIR_RAW = RAIZ / "data" / "raw"
-DIR_PROCESSED = RAIZ / "data" / "processed"
+DIR_DATA = RAIZ / "data"
+DIR_RAW = DIR_DATA / "raw"
+DIR_PROCESSED = DIR_DATA / "processed"
 DIR_REPORTS = RAIZ / "reports"
 DIR_MODELOS = RAIZ / "modelos"
 
