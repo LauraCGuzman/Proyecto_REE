@@ -48,13 +48,34 @@ def obtener_token() -> str:
 def resample_horario(df: pd.DataFrame) -> pd.DataFrame:
     """Agrega demanda_real de 5 minutos a horario (media). Traslado literal
     del paso de resample de `analisis_historico_2_demandas.ipynb` (celda 24),
-    reducido a la columna `demanda_real` -- ver docstring del módulo."""
+    reducido a la columna `demanda_real` -- ver docstring del módulo.
+
+    Dos invariantes que el notebook no necesitaba (allí el histórico ya
+    estaba validado por `validar_rejilla` antes de llegar aquí) pero que este
+    módulo sí, porque puede correr desatendido sobre una descarga fresca:
+      - Cada hora debe agregar exactamente 12 lecturas de 5 min. Menos de 12
+        es una descarga incompleta (p.ej. la última hora si `fin` cae a
+        mitad de hora) -- "let it scream", no se promedia sobre un hueco.
+      - `datetime_utc` debe seguir en UTC tras el resample.
+    """
     df_horario = (
         df.set_index("datetime_utc")
         .resample("1h")
-        .agg({"demanda_real": "mean"})
+        .agg(demanda_real=("demanda_real", "mean"), _n_lecturas=("demanda_real", "count"))
         .reset_index()
     )
+
+    incompletas = df_horario.loc[df_horario["_n_lecturas"] != 12, "datetime_utc"]
+    assert incompletas.empty, (
+        "Horas con un número de lecturas de 5 min distinto de 12 (descarga "
+        f"incompleta): {incompletas.tolist()}"
+    )
+    df_horario = df_horario.drop(columns="_n_lecturas")
+
+    assert str(df_horario["datetime_utc"].dt.tz) == "UTC", (
+        f"datetime_utc debe quedar en UTC tras el resample, no {df_horario['datetime_utc'].dt.tz}."
+    )
+
     return df_horario
 
 

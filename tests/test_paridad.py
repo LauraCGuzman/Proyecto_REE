@@ -10,9 +10,10 @@ falla, `src/features.py` o `src/modelo.py` divergen del notebook -- no se
 "arregla" ajustando la fixture, se para y se reporta (misma regla que el
 gate de `scripts/gate_numeros.py`).
 
-Se puede ejecutar como script (sin pytest, no está en el entorno del
-proyecto hoy) o recolectar con pytest si se añade más adelante: las
-funciones `test_*` usan solo `assert` plano.
+Se puede ejecutar como script (`python tests/test_paridad.py`) o recolectar
+con pytest (`requirements-dev.txt`): las funciones `test_*` usan solo
+`assert` plano, sin fixtures ni marks de pytest, para que ambas formas de
+ejecutarlo hagan exactamente lo mismo.
 """
 from __future__ import annotations
 
@@ -32,7 +33,7 @@ for _stream in (sys.stdout, sys.stderr):
         _stream.reconfigure(encoding="utf-8", errors="replace")
 
 from src.features import FEATURES_5F, construir_features_5f
-from src.modelo import cargar_modelo
+from src.modelo import cargar_modelo, predecir
 from src.paths import DIR_PROCESSED
 
 RUTA_FIXTURE = Path(__file__).parent / "fixtures" / "paridad_golden.parquet"
@@ -76,7 +77,7 @@ def test_predicciones_reproducen_notebook():
     modelo = cargar_modelo()
 
     X = df_features.loc[fixture["datetime_utc"], FEATURES_5F]
-    predicciones = modelo.predict(X)
+    predicciones = predecir(modelo, X)
 
     for (_, fila), pred in zip(fixture.iterrows(), predicciones):
         esperado = fila["prediccion_modelo_v1"]
@@ -90,7 +91,8 @@ def main() -> int:
     print("✔ test_features_reproducen_notebook — src/features.py reproduce el notebook.")
     test_predicciones_reproducen_notebook()
     print("✔ test_predicciones_reproducen_notebook — modelo_v1.pkl reproduce el notebook.")
-    print("\nParidad OK — tolerancia 0 sobre 28 filas fijas.")
+    n_filas = len(pd.read_parquet(RUTA_FIXTURE))
+    print(f"\nParidad OK — tolerancia 0 sobre {n_filas} filas fijas.")
     return 0
 
 

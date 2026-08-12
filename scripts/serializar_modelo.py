@@ -57,14 +57,20 @@ ANCLA_CELDA_MODELO = (
 # Número de filas del fixture dorado por cada franja: bordes de test_model
 # (para cubrir el arranque y el final del rango) + todas las filas es_evento
 # (para no dejar sin cubrir la máscara del 11-J, que es la más frágil) +
-# muestreo regular para variar hora/mes/tipo_efectivo.
+# al menos una fila es_puente=True (rama que el muestreo regular no
+# garantiza tocar, ver revisión del 12/8) + muestreo regular para variar
+# hora/mes/tipo_efectivo.
 N_BORDE = 5
+N_PUENTE = 1
 PASO_MUESTREO = 400
 
 EXTRACCION_SRC = rf"""
 import joblib as _gate_joblib
 import json as _gate_json
 import pandas as _gate_pd
+
+import holidays as _gate_holidays
+import sklearn as _gate_sklearn
 
 _gate_dir_modelos = Path(r"{DIR_MODELOS}")
 _gate_dir_fixtures = Path(r"{DIR_FIXTURES}")
@@ -80,6 +86,8 @@ _gate_metadatos = {{
     "features": list(features_5f),
     "variable_objetivo": variable_objetivo,
     "hiperparametros": dict(params_nivel),
+    "version_sklearn": _gate_sklearn.__version__,
+    "version_holidays": _gate_holidays.__version__,
     "rango_datos_entrenamiento": {{
         "inicio": train_model_clean["datetime_utc"].min().isoformat(),
         "fin": train_model_clean["datetime_utc"].max().isoformat(),
@@ -101,8 +109,11 @@ _gate_test["_pred_modelo_v1"] = pred_test_nivel
 _gate_n = len(_gate_test)
 _gate_idx_borde = set(range({N_BORDE!r})) | set(range(_gate_n - {N_BORDE!r}, _gate_n))
 _gate_idx_evento = set(_gate_test.index[_gate_test["es_evento"]])
+_gate_idx_puente = set(_gate_test.index[_gate_test["es_puente"]][: {N_PUENTE!r}])
 _gate_idx_muestreo = set(range(0, _gate_n, {PASO_MUESTREO!r}))
-_gate_idx_fixture = sorted(_gate_idx_borde | _gate_idx_evento | _gate_idx_muestreo)
+_gate_idx_fixture = sorted(
+    _gate_idx_borde | _gate_idx_evento | _gate_idx_puente | _gate_idx_muestreo
+)
 
 _gate_columnas_fixture = (
     ["datetime_utc"] + list(features_5f) + ["es_evento", "demanda_real", "_pred_modelo_v1"]
