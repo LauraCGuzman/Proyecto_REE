@@ -2,7 +2,7 @@
 
 Ejecuta `notebooks/modelo_demanda.ipynb` de arriba abajo en un kernel limpio
 (nbclient), extrae las métricas, los conteos de fila y los hiperparámetros
-ganadores que fija el §0, y los vuelca a `reports/baseline_numeros.json`.
+ganadores que fija el §0, y los vuelca a `modelos/baseline_numeros.json`.
 
 Uso:
     .venv\\Scripts\\python.exe scripts\\gate_numeros.py            # genera/actualiza el baseline
@@ -61,7 +61,7 @@ for _stream in (sys.stdout, sys.stderr):
 
 RAIZ = Path(__file__).resolve().parent.parent
 NOTEBOOK = RAIZ / "notebooks" / "modelo_demanda.ipynb"
-BASELINE = RAIZ / "reports" / "baseline_numeros.json"
+BASELINE = RAIZ / "modelos" / "baseline_numeros.json"
 
 BACKEND_HEADLESS_SRC = "import matplotlib; matplotlib.use('Agg')"
 
@@ -354,7 +354,7 @@ def main() -> int:
     parser.add_argument(
         "--check",
         action="store_true",
-        help="Compara contra reports/baseline_numeros.json en vez de (re)generarlo.",
+        help="Compara contra modelos/baseline_numeros.json en vez de (re)generarlo.",
     )
     args = parser.parse_args()
 

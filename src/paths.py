@@ -19,7 +19,7 @@ puede centralizar del todo. Bootstrap estándar para cada notebook:
                 sys.path.insert(0, str(candidato))
             break
 
-    from src.paths import RAIZ, DIR_RAW, DIR_PROCESSED, DIR_REPORTS
+    from src.paths import RAIZ, DIR_RAW, DIR_PROCESSED, DIR_REPORTS, DIR_MODELOS
 """
 import sys
 from pathlib import Path
@@ -42,6 +42,7 @@ RAIZ = Path(__file__).resolve().parents[1]
 DIR_RAW = RAIZ / "data" / "raw"
 DIR_PROCESSED = RAIZ / "data" / "processed"
 DIR_REPORTS = RAIZ / "reports"
+DIR_MODELOS = RAIZ / "modelos"
 
 # data/ está en .gitignore: en un git clone limpio estas carpetas no existen
 # todavía, y eso es normal, no un fallo. Crearlas es idempotente. Lo que sí
@@ -50,6 +51,7 @@ DIR_REPORTS = RAIZ / "reports"
 DIR_RAW.mkdir(parents=True, exist_ok=True)
 DIR_PROCESSED.mkdir(parents=True, exist_ok=True)
 DIR_REPORTS.mkdir(parents=True, exist_ok=True)
+DIR_MODELOS.mkdir(parents=True, exist_ok=True)
 
 if str(RAIZ) not in sys.path:
     sys.path.insert(0, str(RAIZ))

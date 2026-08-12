@@ -1,0 +1,25 @@
+{
+  "fecha_serializacion": "2026-08-12T10:07:13.559102+00:00",
+  "notebook_origen": "notebooks/modelo_demanda.ipynb",
+  "celda_ancla": "modelo_nivel_final = DecisionTreeRegressor(random_state=42, **params_nivel)",
+  "features": [
+    "hora",
+    "mes",
+    "tipo_efectivo",
+    "es_puente",
+    "demanda_lag_24"
+  ],
+  "variable_objetivo": "demanda_real",
+  "hiperparametros": {
+    "max_depth": 10,
+    "min_samples_leaf": 5
+  },
+  "rango_datos_entrenamiento": {
+    "inicio": "2023-01-02T00:00:00+00:00",
+    "fin": "2025-12-31T23:00:00+00:00",
+    "n_filas": 26280
+  },
+  "mae_test_4344": 1266.4835,
+  "mae_test_4336_censo_ree": 1263.0222,
+  "sesgo_test": 755.1545
+}

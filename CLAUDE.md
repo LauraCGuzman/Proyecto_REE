@@ -7,9 +7,9 @@ no versionado aquí). Reglas fijas para cualquier trabajo de refactor en este re
   defecto ni comportamiento. Si algo pide mejora, se anota y se pregunta — no se
   aplica por iniciativa propia.
 - **Si un número del gate se mueve, se para y se reporta. NUNCA se ajusta el
-  baseline.** El JSON de baseline (`reports/baseline_numeros.json`) es la verdad
-  congelada; una discrepancia significa que el refactor rompió algo, no que el
-  baseline esté desactualizado.
+  baseline.** El JSON de baseline (`modelos/baseline_numeros.json`, movido desde
+  `reports/` en Fase 1.5) es la verdad congelada; una discrepancia significa que
+  el refactor rompió algo, no que el baseline esté desactualizado.
 - **No borrar ni mover `sandbox/` sin confirmación explícita de Laura.**
 - **No editar notebooks leyendo el JSON completo.** Usar `nbformat` y localizar
   celdas por la cadena de búsqueda que indica el pliego, nunca por índice numérico
