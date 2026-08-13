@@ -414,7 +414,7 @@ def main() -> int:
             print(f"  - {d}")
         print("\nNo se ha tocado el baseline. Si el refactor es correcto, esto no debería pasar nunca.")
         return 1
-    print(f"\n✔ GATE OK — {n}/{n} números coinciden con el baseline.")
+    print(f"\n✔ GATE OK — {n}/{n} valores coinciden con el baseline.")
     return 0
 
 
