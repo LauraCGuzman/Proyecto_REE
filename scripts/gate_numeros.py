@@ -322,35 +322,50 @@ def ejecutar_notebook(notebook_path: Path) -> dict:
     return json.loads(payload_texto[inicio:fin].strip())
 
 
-def comparar(actual: dict, baseline: dict, ruta: str = "") -> list[str]:
-    """Comparación recursiva; cualquier desviación distinta de cero se reporta."""
+def comparar(actual: dict, baseline: dict, ruta: str = "") -> tuple[list[str], int]:
+    """Comparación recursiva; cualquier desviación distinta de cero se reporta.
+
+    Devuelve `(diffs, n_comparados)`. `n_comparados` cuenta cada posición hoja
+    visitada por este mismo recorrido (una por valor terminal comparado, o una
+    por cada clave/tipo que no encaja) -- sale del recorrido real, no de un
+    conteo aparte que podría no ver lo mismo que la comparación.
+    """
     diffs: list[str] = []
+    n = 0
     if isinstance(baseline, dict):
         if not isinstance(actual, dict):
-            return [f"{ruta}: tipo distinto (baseline=dict, actual={type(actual).__name__})"]
+            return [f"{ruta}: tipo distinto (baseline=dict, actual={type(actual).__name__})"], 1
         claves = set(baseline) | set(actual)
         for k in sorted(claves):
             sub_ruta = f"{ruta}.{k}" if ruta else k
             if k not in actual:
                 diffs.append(f"{sub_ruta}: presente en baseline, ausente en actual")
+                n += 1
             elif k not in baseline:
                 diffs.append(f"{sub_ruta}: presente en actual, ausente en baseline")
+                n += 1
             else:
-                diffs.extend(comparar(actual[k], baseline[k], sub_ruta))
+                sub_diffs, sub_n = comparar(actual[k], baseline[k], sub_ruta)
+                diffs.extend(sub_diffs)
+                n += sub_n
     elif isinstance(baseline, list):
         if not isinstance(actual, list):
-            return [f"{ruta}: tipo distinto (baseline=list, actual={type(actual).__name__})"]
+            return [f"{ruta}: tipo distinto (baseline=list, actual={type(actual).__name__})"], 1
         if len(baseline) != len(actual):
             diffs.append(f"{ruta}: longitud distinta (baseline={len(baseline)}, actual={len(actual)})")
         for i, (a, b) in enumerate(zip(actual, baseline)):
-            diffs.extend(comparar(a, b, f"{ruta}[{i}]"))
+            sub_diffs, sub_n = comparar(a, b, f"{ruta}[{i}]")
+            diffs.extend(sub_diffs)
+            n += sub_n
     elif isinstance(baseline, float) or isinstance(actual, float):
+        n = 1
         if float(actual) != float(baseline):
             diffs.append(f"{ruta}: baseline={baseline} actual={actual} (Δ={float(actual) - float(baseline):+.4f})")
     else:
+        n = 1
         if actual != baseline:
             diffs.append(f"{ruta}: baseline={baseline!r} actual={actual!r}")
-    return diffs
+    return diffs, n
 
 
 def main() -> int:
@@ -373,7 +388,7 @@ def main() -> int:
 
     if args.regenerar:
         anterior = json.loads(BASELINE.read_text(encoding="utf-8")) if BASELINE.exists() else {}
-        diffs = comparar(resultado, anterior)
+        diffs, _ = comparar(resultado, anterior)
         if diffs:
             print(f"\n{len(diffs)} cambio(s) que se van a escribir en el baseline:\n")
             for d in diffs:
@@ -392,14 +407,14 @@ def main() -> int:
         print(f"No existe {BASELINE.relative_to(RAIZ)}. Ejecuta con --regenerar primero.", file=sys.stderr)
         return 2
     baseline = json.loads(BASELINE.read_text(encoding="utf-8"))
-    diffs = comparar(resultado, baseline)
+    diffs, n = comparar(resultado, baseline)
     if diffs:
         print(f"\n✘ GATE FALLIDO — {len(diffs)} diferencia(s) contra el baseline:\n")
         for d in diffs:
             print(f"  - {d}")
         print("\nNo se ha tocado el baseline. Si el refactor es correcto, esto no debería pasar nunca.")
         return 1
-    print("\n✔ GATE OK — cero diferencias contra el baseline.")
+    print(f"\n✔ GATE OK — {n}/{n} números coinciden con el baseline.")
     return 0
 
 

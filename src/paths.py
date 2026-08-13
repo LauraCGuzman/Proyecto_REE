@@ -45,10 +45,11 @@ DIR_PROCESSED = DIR_DATA / "processed"
 DIR_REPORTS = RAIZ / "reports"
 DIR_MODELOS = RAIZ / "modelos"
 
-# data/ está en .gitignore: en un git clone limpio estas carpetas no existen
-# todavía, y eso es normal, no un fallo. Crearlas es idempotente. Lo que sí
-# indicaría una raíz mal resuelta es que falte el propio marcador 'src' —
-# pero eso ya no puede pasar aquí, porque RAIZ se deriva de este archivo.
+# data/raw/ está en .gitignore (dato crudo, regenerable): en un clon nuevo
+# no existe todavía, y eso es normal, no un fallo. Crear aquí las tres
+# carpetas es idempotente igualmente. Lo que sí indicaría una raíz mal
+# resuelta es que falte el propio marcador 'src' — pero eso ya no puede
+# pasar aquí, porque RAIZ se deriva de este archivo.
 DIR_RAW.mkdir(parents=True, exist_ok=True)
 DIR_PROCESSED.mkdir(parents=True, exist_ok=True)
 DIR_REPORTS.mkdir(parents=True, exist_ok=True)
