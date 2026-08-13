@@ -5,12 +5,16 @@ Ejecuta `notebooks/modelo_demanda.ipynb` de arriba abajo en un kernel limpio
 ganadores que fija el §0, y los vuelca a `modelos/baseline_numeros.json`.
 
 Uso:
-    .venv\\Scripts\\python.exe scripts\\gate_numeros.py            # genera/actualiza el baseline
-    .venv\\Scripts\\python.exe scripts\\gate_numeros.py --check    # compara contra el baseline existente
+    .venv\\Scripts\\python.exe scripts\\gate_numeros.py               # VERIFICA contra el baseline (no escribe)
+    .venv\\Scripts\\python.exe scripts\\gate_numeros.py --check       # sinónimo explícito del comportamiento por defecto
+    .venv\\Scripts\\python.exe scripts\\gate_numeros.py --regenerar   # ESCRIBE el baseline (único modo que lo hace)
 
-`--check` NUNCA reescribe el baseline. Si algo difiere, sale con código != 0 y
-lista las diferencias. Debe ejecutarse con el intérprete del venv del proyecto
-(para que nbclient encuentre el kernel "python3" instalado ahí).
+Por defecto (con o sin `--check`) el script NUNCA reescribe el baseline: compara
+y, si algo difiere, sale con código != 0 y lista las diferencias número a número.
+`--regenerar` es el único modo que modifica `modelos/baseline_numeros.json`, y
+antes de escribir imprime el diff de lo que va a cambiar. Debe ejecutarse con el
+intérprete del venv del proyecto (para que nbclient encuentre el kernel
+"python3" instalado ahí).
 
 Notas de implementación:
 - No se modifica `notebooks/modelo_demanda.ipynb` en disco: el notebook se
@@ -351,36 +355,51 @@ def comparar(actual: dict, baseline: dict, ruta: str = "") -> list[str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
+    grupo = parser.add_mutually_exclusive_group()
+    grupo.add_argument(
         "--check",
         action="store_true",
-        help="Compara contra modelos/baseline_numeros.json en vez de (re)generarlo.",
+        help="Sinónimo explícito del comportamiento por defecto: verifica y no escribe.",
+    )
+    grupo.add_argument(
+        "--regenerar",
+        action="store_true",
+        help="Reescribe modelos/baseline_numeros.json. Único modo que modifica el fichero.",
     )
     args = parser.parse_args()
 
     print(f"Ejecutando {NOTEBOOK.relative_to(RAIZ)} en kernel limpio (nbclient)...")
     resultado = ejecutar_notebook(NOTEBOOK)
 
-    if args.check:
-        if not BASELINE.exists():
-            print(f"No existe {BASELINE.relative_to(RAIZ)}. Ejecuta sin --check primero.", file=sys.stderr)
-            return 2
-        baseline = json.loads(BASELINE.read_text(encoding="utf-8"))
-        diffs = comparar(resultado, baseline)
+    if args.regenerar:
+        anterior = json.loads(BASELINE.read_text(encoding="utf-8")) if BASELINE.exists() else {}
+        diffs = comparar(resultado, anterior)
         if diffs:
-            print(f"\n✘ GATE FALLIDO — {len(diffs)} diferencia(s) contra el baseline:\n")
+            print(f"\n{len(diffs)} cambio(s) que se van a escribir en el baseline:\n")
             for d in diffs:
                 print(f"  - {d}")
-            print("\nNo se ha tocado el baseline. Si el refactor es correcto, esto no debería pasar nunca.")
-            return 1
-        print("\n✔ GATE OK — cero diferencias contra el baseline.")
+        else:
+            print("\nSin cambios: los valores recalculados coinciden con el baseline actual.")
+        BASELINE.parent.mkdir(parents=True, exist_ok=True)
+        BASELINE.write_text(
+            json.dumps(resultado, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        )
+        print(f"\nBaseline escrito en {BASELINE.relative_to(RAIZ)}")
         return 0
 
-    BASELINE.parent.mkdir(parents=True, exist_ok=True)
-    BASELINE.write_text(
-        json.dumps(resultado, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-    )
-    print(f"\nBaseline escrito en {BASELINE.relative_to(RAIZ)}")
+    # Modo verificación: por defecto (sin flags) o explícito con --check.
+    if not BASELINE.exists():
+        print(f"No existe {BASELINE.relative_to(RAIZ)}. Ejecuta con --regenerar primero.", file=sys.stderr)
+        return 2
+    baseline = json.loads(BASELINE.read_text(encoding="utf-8"))
+    diffs = comparar(resultado, baseline)
+    if diffs:
+        print(f"\n✘ GATE FALLIDO — {len(diffs)} diferencia(s) contra el baseline:\n")
+        for d in diffs:
+            print(f"  - {d}")
+        print("\nNo se ha tocado el baseline. Si el refactor es correcto, esto no debería pasar nunca.")
+        return 1
+    print("\n✔ GATE OK — cero diferencias contra el baseline.")
     return 0
 
 

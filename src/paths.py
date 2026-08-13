@@ -52,7 +52,6 @@ DIR_MODELOS = RAIZ / "modelos"
 DIR_RAW.mkdir(parents=True, exist_ok=True)
 DIR_PROCESSED.mkdir(parents=True, exist_ok=True)
 DIR_REPORTS.mkdir(parents=True, exist_ok=True)
-DIR_MODELOS.mkdir(parents=True, exist_ok=True)
 
 if str(RAIZ) not in sys.path:
     sys.path.insert(0, str(RAIZ))
