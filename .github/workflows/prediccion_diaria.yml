@@ -49,14 +49,31 @@ jobs:
           API_ESIOS: ${{ secrets.API_ESIOS }}
         run: python pipeline/predecir.py
 
-      - name: Commit y push si hay cambios
+      - name: Commit y push de la predicción (COMMIT A)
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/predicciones.csv
+          git add data/predicciones.csv data/ancla_usada.csv
           if git diff --cached --quiet; then
             echo "Sin cambios en data/predicciones.csv -- nada que commitear."
             exit 0
           fi
           git commit -m "chore: predicción diaria $(date -u +%Y-%m-%d)"
+          git push
+
+      - name: Evaluación diaria
+        env:
+          API_ESIOS: ${{ secrets.API_ESIOS }}
+        run: python pipeline/evaluar.py
+
+      - name: Commit y push de la evaluación (COMMIT B)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/errores.csv data/metricas.json reports/estado_pipeline.md
+          if git diff --cached --quiet; then
+            echo "Sin cambios en la evaluación -- nada que commitear."
+            exit 0
+          fi
+          git commit -m "chore: evaluación diaria $(date -u +%Y-%m-%d)"
           git push
