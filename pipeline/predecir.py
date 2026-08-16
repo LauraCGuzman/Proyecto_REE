@@ -23,6 +23,12 @@ convenciones de nombre de carpeta, ver `data/predicciones.csv` más abajo).
 `--recuperar` permite explícitamente ese caso para uso manual; no debe
 usarse nunca desde el cron de Fase 3.
 
+Fase 2 (16/8): `data/ancla_usada.csv` persiste la entrada real que produjo
+cada predicción (append-only, condicionado a que `guardar_predicciones`
+haya escrito de verdad -- ver su docstring), y `src.quality.
+assert_rango_fisico` valida tanto `demanda_lag_24` como las predicciones
+del modelo contra el rango físicamente posible de la demanda peninsular.
+
 Uso:
     predecir.py                # normal (cron): exige ancla == ayer (Madrid).
     predecir.py --recuperar    # manual: acepta un ancla más antigua.
@@ -53,6 +59,7 @@ from src.features import (
 from src.modelo import cargar_modelo
 from src.modelo import predecir as predecir_con_modelo
 from src.paths import DIR_DATA
+from src.quality import assert_rango_fisico
 
 TZ_MADRID = "Europe/Madrid"
 NOMBRE_MODELO = "v1"
@@ -70,6 +77,20 @@ COLUMNAS_PREDICCIONES = [
     "valor_predicho",
     "ancla_ultimo_dia_real",
     "modelo",
+]
+
+# `data/ancla_usada.csv`: la entrada que produjo cada predicción, no solo el
+# número emitido (decisión de Laura, 16/8). Append-only, igual que
+# `predicciones.csv`. Sin `modelo`: el dato de entrada no depende del modelo
+# -- el join con `predicciones.csv` va por `fecha_emision` + `ancla_
+# ultimo_dia_real`.
+RUTA_ANCLA_USADA = DIR_DATA / "ancla_usada.csv"
+COLUMNAS_ANCLA_USADA = [
+    "fecha_emision",
+    "datetime_utc_ancla",
+    "demanda_real",
+    "n_lecturas",
+    "ancla_ultimo_dia_real",
 ]
 
 
@@ -132,14 +153,27 @@ def construir_target_df(
         "salida): no se emite ninguna predicción parcial."
     )
 
+    # Una entrada absurda en demanda_lag_24 no da error: da una predicción
+    # plausible y falsa (pliego Fase 2 §1, punto 2).
+    assert_rango_fisico(
+        df_target.set_index("datetime_utc")["demanda_lag_24"],
+        "predecir.py: demanda_lag_24 (construir_target_df)",
+    )
+
     return df_target, dia_target_madrid
 
 
-def guardar_predicciones(filas_nuevas: pd.DataFrame) -> None:
+def guardar_predicciones(filas_nuevas: pd.DataFrame) -> bool:
     """Append-only. Si `RUTA_PREDICCIONES` ya existe, no reescribe nada: si
     TODAS las filas nuevas ya estaban (misma clave horizonte+modelo), es un
     rerun del mismo día y no hace nada; si el solape es parcial, para --eso
-    no debería pasar en un rerun normal."""
+    no debería pasar en un rerun normal.
+
+    Devuelve `True` si escribió, `False` si fue un rerun idempotente. El
+    llamador usa este valor para decidir si escribe también `ancla_usada.csv`
+    (ver `main`): si se escribiera sin consultar esto, un rerun duplicaría
+    las filas del ancla con `fecha_emision` distinta (es `now()`), y la
+    deduplicación por clave no las cazaría."""
     if RUTA_PREDICCIONES.exists():
         existentes = pd.read_csv(RUTA_PREDICCIONES, dtype=str)
         clave_existente = set(zip(existentes["horizonte"], existentes["modelo"]))
@@ -154,11 +188,50 @@ def guardar_predicciones(filas_nuevas: pd.DataFrame) -> None:
         )
         if ya_escritas.all():
             print("Ya estaba escrito (idempotencia) -- nada que añadir.")
-            return
+            return False
         filas_nuevas.to_csv(RUTA_PREDICCIONES, mode="a", header=False, index=False)
     else:
         RUTA_PREDICCIONES.parent.mkdir(parents=True, exist_ok=True)
         filas_nuevas.to_csv(RUTA_PREDICCIONES, mode="w", header=True, index=False)
+    return True
+
+
+def construir_ancla_usada(
+    df_target: pd.DataFrame,
+    df_horario: pd.DataFrame,
+    dia_ancla_madrid: pd.Timestamp,
+    fecha_emision: str,
+) -> pd.DataFrame:
+    """Filas de `df_horario` que `demanda_lag_24` consumió realmente para
+    construir `df_target` -- no la ventana de descarga completa de
+    `DIAS_VENTANA_DESCARGA` días, solo `df_target["datetime_utc"] - 24h`
+    (23/24/25 filas, una por hora del día objetivo). `n_lecturas` es 12 por
+    construcción (viene de `serie_referencia`, que ya filtra por eso en
+    `main`) -- se guarda igualmente para que el esquema sobreviva sin
+    migración cuando llegue la Fase 5."""
+    datetime_utc_ancla = df_target["datetime_utc"] - pd.Timedelta(hours=24)
+    referencia = df_horario.set_index("datetime_utc").loc[datetime_utc_ancla]
+
+    return pd.DataFrame(
+        {
+            "fecha_emision": fecha_emision,
+            "datetime_utc_ancla": datetime_utc_ancla.dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "demanda_real": referencia["demanda_real"].to_numpy(),
+            "n_lecturas": referencia["n_lecturas"].to_numpy(),
+            "ancla_ultimo_dia_real": dia_ancla_madrid.date().isoformat(),
+        }
+    )[COLUMNAS_ANCLA_USADA]
+
+
+def guardar_ancla_usada(filas_nuevas: pd.DataFrame) -> None:
+    """Append-only. Sin guarda de idempotencia propia: el llamador (`main`)
+    solo invoca esto cuando `guardar_predicciones` devolvió `True` -- ver su
+    docstring."""
+    if RUTA_ANCLA_USADA.exists():
+        filas_nuevas.to_csv(RUTA_ANCLA_USADA, mode="a", header=False, index=False)
+    else:
+        RUTA_ANCLA_USADA.parent.mkdir(parents=True, exist_ok=True)
+        filas_nuevas.to_csv(RUTA_ANCLA_USADA, mode="w", header=True, index=False)
 
 
 def main() -> int:
@@ -206,6 +279,15 @@ def main() -> int:
     modelo = cargar_modelo()
     predicciones = predecir_con_modelo(modelo, df_target[FEATURES_5F])
 
+    # Hoy casi no puede saltar (un árbol solo devuelve medias de sus hojas):
+    # su valor es de Fase 5, cuando el challenger se re-entrena con datos
+    # frescos y este assert es lo único que hay entre unos datos de
+    # entrenamiento corruptos y el CSV publicado (pliego Fase 2 §1, punto 3).
+    assert_rango_fisico(
+        pd.Series(predicciones, index=df_target["datetime_utc"].to_numpy()),
+        "predecir.py: predicciones del modelo (main)",
+    )
+
     fecha_emision = pd.Timestamp.now(tz="UTC").strftime("%Y-%m-%dT%H:%M:%SZ")
     filas_nuevas = pd.DataFrame(
         {
@@ -217,7 +299,10 @@ def main() -> int:
         }
     )[COLUMNAS_PREDICCIONES]
 
-    guardar_predicciones(filas_nuevas)
+    escrito = guardar_predicciones(filas_nuevas)
+    if escrito:
+        ancla_usada = construir_ancla_usada(df_target, df_horario, dia_ancla, fecha_emision)
+        guardar_ancla_usada(ancla_usada)
 
     print(
         f"Predicción emitida para {dia_target_madrid.date()} (Madrid, "

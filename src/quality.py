@@ -5,6 +5,36 @@
 El 28-A pasa (1) si la telemetría siguió emitiendo, y en (2) es EVENTO, no CORRUPCION."""
 import pandas as pd
 
+# Rango físicamente posible de la demanda peninsular española. Único lugar
+# donde cambiar el rango si algún día hace falta -- importado desde los tres
+# puntos de llamada del pipeline diario (Fase 2, pliego §1): `evaluar.py`
+# sobre `valor_real`, y `predecir.py` sobre `demanda_lag_24` y sobre las
+# `predicciones` del modelo.
+DEMANDA_MIN_MW = 15_000
+DEMANDA_MAX_MW = 45_000
+
+
+def assert_rango_fisico(valores, contexto: str) -> None:
+    """Falla en rojo si algún valor sale del rango físicamente posible de la
+    demanda peninsular. `contexto` identifica el sitio de la llamada en el
+    mensaje de error.
+
+    `valores` debe ser un `pd.Series` cuyo índice sea el timestamp de cada
+    valor (o algo convertible a uno): el mensaje de error imprime cuántas
+    filas violan el rango y las tres primeras con su timestamp -- un mensaje
+    sin la fila no sirve a las 05:17 UTC de un martes."""
+    serie = valores if isinstance(valores, pd.Series) else pd.Series(valores)
+    fuera_de_rango = serie[(serie < DEMANDA_MIN_MW) | (serie > DEMANDA_MAX_MW)]
+
+    primeras = ", ".join(
+        f"{ts} -> {valor:.1f} MW" for ts, valor in fuera_de_rango.head(3).items()
+    )
+    assert fuera_de_rango.empty, (
+        f"{contexto}: {len(fuera_de_rango)} valor(es) fuera del rango físico "
+        f"[{DEMANDA_MIN_MW:,} MW, {DEMANDA_MAX_MW:,} MW]. Primeras "
+        f"{min(3, len(fuera_de_rango))}: {primeras}"
+    )
+
 
 def validar_rejilla(df: pd.DataFrame, inicio: pd.Timestamp, fin: pd.Timestamp):
     """
