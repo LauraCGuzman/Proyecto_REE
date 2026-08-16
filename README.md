@@ -204,7 +204,8 @@ data/processed/  series limpias y consolidadas (versionado: git hace de control 
 src/             clientes de API, rutas, validación de calidad, utilidades de modelado
 notebooks/       modelo de demanda y detección de anomalías
 scripts/         gate de regresión numérica
-reports/         foto de referencia de los números
+modelos/         modelo serializado y foto de referencia de los números
+tests/           test de paridad notebook ↔ src
 ```
 
 ---
