@@ -53,9 +53,20 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/predicciones.csv data/ancla_usada.csv
+          git add data/predicciones.csv
+          # Guarda de ARRANQUE, no permanente: data/ancla_usada.csv todavía no
+          # está versionado en main, así que puede no existir en el checkout
+          # -- un rerun idempotente del mismo día (guardar_predicciones
+          # devuelve False) no lo escribe. `git add` sobre una ruta inexistente
+          # falla ("pathspec did not match any files"), no es un no-op. En
+          # cuanto este commit lo versione por primera vez, `git checkout` lo
+          # deja siempre presente en el runner y esta guarda deja de tener
+          # efecto.
+          if [ -f data/ancla_usada.csv ]; then
+            git add data/ancla_usada.csv
+          fi
           if git diff --cached --quiet; then
-            echo "Sin cambios en data/predicciones.csv -- nada que commitear."
+            echo "Sin cambios en data/predicciones.csv ni data/ancla_usada.csv -- nada que commitear."
             exit 0
           fi
           git commit -m "chore: predicción diaria $(date -u +%Y-%m-%d)"
@@ -70,7 +81,19 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/errores.csv data/metricas.json reports/estado_pipeline.md
+          # Guarda de ARRANQUE, no permanente: data/errores.csv todavía no está
+          # versionado en main, así que puede no existir en el checkout -- un
+          # día sin horas evaluables no lo escribe. Misma razón que la guarda
+          # de COMMIT A; deja de tener efecto en cuanto este commit lo
+          # versione por primera vez.
+          if [ -f data/errores.csv ]; then
+            git add data/errores.csv
+          fi
+          # Sin guarda: si evaluar.py sale en verde, data/metricas.json y
+          # reports/estado_pipeline.md se reescriben enteros SIEMPRE (§3.6,
+          # §3.7 del pliego) -- que falten aquí es un bug y debe fallar en
+          # rojo, no pasar en silencio.
+          git add data/metricas.json reports/estado_pipeline.md
           if git diff --cached --quiet; then
             echo "Sin cambios en la evaluación -- nada que commitear."
             exit 0
