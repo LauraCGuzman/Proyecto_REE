@@ -1,5 +1,5 @@
 {
-  "actualizado_utc": "2026-08-17T05:53:39Z",
+  "actualizado_utc": "2026-08-18T05:47:43Z",
   "modelo": "v1",
   "muestra_insuficiente": true,
   "publicado": {
@@ -8,20 +8,20 @@
       "7d": {
         "mae": null,
         "sesgo_medio": null,
-        "n_horas": 47,
-        "cobertura_dias": 2.6
+        "n_horas": 63,
+        "cobertura_dias": 3.6
       },
       "30d": {
         "mae": null,
         "sesgo_medio": null,
-        "n_horas": 47,
-        "cobertura_dias": 2.6
+        "n_horas": 63,
+        "cobertura_dias": 3.6
       },
       "90d": {
         "mae": null,
         "sesgo_medio": null,
-        "n_horas": 47,
-        "cobertura_dias": 2.6
+        "n_horas": 63,
+        "cobertura_dias": 3.6
       }
     }
   },
@@ -31,20 +31,20 @@
       "7d": {
         "mae": null,
         "sesgo_medio": null,
-        "n_horas": 32,
-        "cobertura_dias": 3.2
+        "n_horas": 40,
+        "cobertura_dias": 4.2
       },
       "30d": {
         "mae": null,
         "sesgo_medio": null,
-        "n_horas": 32,
-        "cobertura_dias": 3.2
+        "n_horas": 40,
+        "cobertura_dias": 4.2
       },
       "90d": {
         "mae": null,
         "sesgo_medio": null,
-        "n_horas": 32,
-        "cobertura_dias": 3.2
+        "n_horas": 40,
+        "cobertura_dias": 4.2
       }
     }
   },
