@@ -78,7 +78,9 @@ COLUMNAS_ERRORES = [
 DIAS_VENTANA_MAX_EVALUACION = 15
 
 # `mae: null` mientras la ventana no cubra al menos esto (§3.6, regla 3):
-# lo que no se puede afirmar todavía no se escribe.
+# lo que no se puede afirmar todavía no se escribe. Se compara contra
+# `dias_cubiertos` (fechas de calendario distintas con al menos una hora en
+# la ventana), no contra un span en días -- ver `_metrica_ventana`.
 COBERTURA_MINIMA_DIAS = 7
 
 VENTANAS_DIAS = {"7d": 7, "30d": 30, "90d": 90}
@@ -204,27 +206,42 @@ def guardar_errores(filas_nuevas: pd.DataFrame) -> None:
 
 
 def _metrica_ventana(df_ventana: pd.DataFrame) -> dict:
-    """`mae`/`sesgo_medio` en `null` mientras `cobertura_dias <
+    """`mae`/`sesgo_medio` en `null` mientras `dias_cubiertos <
     COBERTURA_MINIMA_DIAS` (§3.6, regla 3): lo que no se puede afirmar
     todavía no se escribe, no un número con asterisco. `cobertura_dias` es
     el span real (en días) entre el primer y el último horizonte evaluado
     de la ventana -- no el tamaño nominal de la ventana (7/30/90): un
     `mae_90d` calculado sobre 3 días reales de historia es una mentira con
-    formato de métrica."""
+    formato de métrica. Se conserva en el JSON con el mismo cálculo, pero
+    ya no gobierna la guarda.
+
+    `dias_cubiertos` es la magnitud que sí gobierna la guarda: fechas de
+    calendario distintas con al menos una hora en la ventana, no un span.
+    Un span cuenta las 06:00Z-21:00Z de siete días consecutivos como 6,6
+    días (6 días y 15 horas entre el primer y el último horizonte, porque
+    cada día objetivo solo publica horas desde las 06:00Z) -- la guarda por
+    span nunca se satisface con la ventana llena. Fechas distintas cuenta
+    esos mismos siete días como 7."""
     n_horas = len(df_ventana)
     if n_horas == 0:
         cobertura_dias = 0.0
+        dias_cubiertos = 0
     else:
         horizonte_ts = pd.to_datetime(df_ventana["horizonte"], utc=True)
         span = horizonte_ts.max() - horizonte_ts.min()
         cobertura_dias = round(span.total_seconds() / 86400.0, 1)
+        dias_cubiertos = horizonte_ts.dt.date.nunique()
 
-    suficiente = cobertura_dias >= COBERTURA_MINIMA_DIAS
+    # Fechas distintas, no span: un span cuenta 7 días consecutivos de horas
+    # 06:00Z-21:00Z como 6,6 días (6 días y 15 horas de primer a último
+    # horizonte) y la guarda nunca se satisface con la ventana llena.
+    suficiente = dias_cubiertos >= COBERTURA_MINIMA_DIAS
     return {
         "mae": round(float(df_ventana["error"].abs().mean()), 2) if suficiente else None,
         "sesgo_medio": round(float(df_ventana["error"].mean()), 2) if suficiente else None,
         "n_horas": n_horas,
         "cobertura_dias": cobertura_dias,
+        "dias_cubiertos": dias_cubiertos,
     }
 
 
@@ -259,8 +276,11 @@ def calcular_metricas(df_errores: pd.DataFrame, modelo: str, ahora_utc: pd.Times
     publicado = _bloque(h_adelanto > 0)
     diagnostico = _bloque(h_adelanto <= 0)
 
-    cobertura_maxima = max(v["cobertura_dias"] for v in publicado.values())
-    muestra_insuficiente = cobertura_maxima < COBERTURA_MINIMA_DIAS
+    # Misma magnitud que gobierna la guarda por ventana (dias_cubiertos), no
+    # el span: si comparara cobertura_dias aquí, el aviso podría desaparecer
+    # sin que ninguna ventana tenga aún mae escrito, o al revés.
+    dias_cubiertos_maximo = max(v["dias_cubiertos"] for v in publicado.values())
+    muestra_insuficiente = dias_cubiertos_maximo < COBERTURA_MINIMA_DIAS
 
     return {
         "actualizado_utc": ahora_utc.strftime("%Y-%m-%dT%H:%M:%SZ"),
