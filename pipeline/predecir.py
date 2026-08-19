@@ -68,7 +68,16 @@ NOMBRE_MODELO = "v1"
 # lag_24 de las predicciones solo necesita el propio día ancla) sino
 # "cuánto retrocedo buscando un día completo si ayer no lo está" -- el 28-A
 # y el 11-J son el precedente de que la telemetría puede fallar más de un día.
-DIAS_VENTANA_DESCARGA = 6
+#
+# 9 y no 8 (Bloque A, preparación de `lag_168`): `lag_168` necesita 7 días
+# completos hacia atrás desde la primera hora del horizonte; el horizonte
+# arranca a las 22:00Z del día anterior al objetivo, y el `.normalize()` de
+# `inicio_descarga` (más abajo) recorta al comienzo del día -- 8 deja el
+# margen a cero y cualquier retraso de publicación de e·sios lo convierte en
+# un NaN; 9 deja un día de holgura. v1 (este PR) solo usa `lag_24`, así que
+# el margen extra no cambia ninguna predicción -- ver verificación de
+# paridad en el log del PR.
+DIAS_VENTANA_DESCARGA = 9
 
 RUTA_PREDICCIONES = DIR_DATA / "predicciones.csv"
 COLUMNAS_PREDICCIONES = [
