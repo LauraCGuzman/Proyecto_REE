@@ -315,13 +315,29 @@ def _formatear_sesgo(valor) -> str:
 def construir_estado_pipeline_md(metricas: dict, n_dias_serie: int) -> str:
     """Fichero generado, se reescribe entero (§3.7). Primera línea marca el
     fichero como no editable a mano. Métrica publicada solamente -- nunca
-    agregada con la diagnóstica (§3.6, regla 1)."""
+    agregada con la diagnóstica (§3.6, regla 1).
+
+    Dos magnitudes distintas conviven aquí y no comparten nombre (pliego PR2
+    §2.1a): `n_dias_serie` cuenta fechas sobre TODO `errores.csv` (publicado +
+    diagnóstico), la tabla cuenta solo publicado por ventana. Se mantiene el
+    cálculo de `n_dias_serie` sobre el fichero completo -- se pierde precisión
+    filtrando a publicado solamente, y el dato de que el histórico arranca
+    antes de la primera fila publicada tiene valor propio -- pero se renombra
+    para que dejen de leerse como la misma cosa.
+
+    La tabla muestra las dos magnitudes de cobertura por ventana (pliego PR2
+    §2.2d): `dias_cubiertos` (fechas de calendario distintas con al menos una
+    hora publicada) es la que gobierna la guarda de `_metrica_ventana`;
+    `cobertura_dias` (el span, primer a último horizonte) se conserva como
+    dato informativo pero no decide nada. Mostrar solo `cobertura_dias`
+    escondía la contradicción que arregló el PR 1: un `mae` escrito junto a
+    una cobertura que parece insuficiente."""
     filas_tabla = []
     for ventana, valores in metricas["publicado"]["ventanas"].items():
         filas_tabla.append(
             f"| {ventana} | {_formatear_mae(valores['mae'])} | "
             f"{_formatear_sesgo(valores['sesgo_medio'])} | {valores['n_horas']} | "
-            f"{valores['cobertura_dias']} | "
+            f"{valores['dias_cubiertos']} | {valores['cobertura_dias']} | "
             f"{metricas['referencia']['mae_test_notebook']:.2f} |"
         )
     tabla = "\n".join(filas_tabla)
@@ -333,25 +349,65 @@ def construir_estado_pipeline_md(metricas: dict, n_dias_serie: int) -> str:
         "",
         f"Última corrida: {metricas['actualizado_utc']}",
         f"Modelo: {metricas['modelo']}",
-        f"Días de serie acumulados en `data/errores.csv`: {n_dias_serie}",
+        f"Fechas presentes en `data/errores.csv` (publicadas + diagnóstico): "
+        f"{n_dias_serie}",
         "",
         "## Métrica publicada (`h_adelanto_h > 0`)",
         "",
-        "| Ventana | MAE (MW) | Sesgo medio (MW) | n horas | Cobertura (días) | "
-        "MAE test notebook (MW) |",
-        "|---|---|---|---|---|---|",
+        "`Fechas cubiertas` cuenta fechas de calendario distintas con al menos "
+        "una hora publicada en la ventana: es la magnitud que decide si el MAE "
+        "se escribe o se muestra `—`. `Span (días)` es la distancia en días "
+        "entre el primer y el último horizonte publicado de la ventana; se "
+        "conserva como dato informativo, pero no gobierna nada. Es menor que "
+        "`Fechas cubiertas` cuando las fechas son contiguas (el span mide días "
+        "transcurridos entre extremos, no fechas contadas), y mayor cuando hay "
+        "huecos entre ellas (fechas dispersas en el tiempo estiran el span sin "
+        "sumar fechas cubiertas).",
+        "",
+        "| Ventana | MAE (MW) | Sesgo medio (MW) | n horas | "
+        "Fechas cubiertas (gobierna) | Span (días) | MAE test notebook (MW) |",
+        "|---|---|---|---|---|---|---|",
         tabla,
         "",
     ]
 
     if metricas["muestra_insuficiente"]:
         lineas += [
-            "> **Muestra insuficiente todavía.** Ninguna ventana alcanza los "
-            f"{COBERTURA_MINIMA_DIAS} días de cobertura mínima -- el MAE se "
-            "muestra como `—` (`null` en `data/metricas.json`) porque lo que "
-            "no se puede afirmar todavía no se escribe.",
+            "> **Muestra insuficiente todavía.** Ninguna ventana alcanza las "
+            f"{COBERTURA_MINIMA_DIAS} fechas de calendario distintas con al "
+            "menos una hora publicada que exige la cobertura mínima -- el MAE "
+            "se muestra como `—` (`null` en `data/metricas.json`) porque lo "
+            "que no se puede afirmar todavía no se escribe.",
             "",
         ]
+
+    lineas += [
+        "## Por qué el MAE de producción no coincide con el del notebook",
+        "",
+        "El MAE de producción de la tabla de arriba no es directamente "
+        "comparable al "
+        f"{metricas['referencia']['mae_test_notebook']:.2f} MW medido en el "
+        "conjunto de test del notebook "
+        "(`notebooks/modelo_demanda.ipynb`, celda 28). Dos limitaciones "
+        "conocidas y diagnosticadas del modelo -- no fallos del pipeline -- "
+        "explican buena parte de la diferencia:",
+        "",
+        "- **Arranque de la semana.** El modelo condiciona el nivel de la "
+        "predicción en `tipo_efectivo(D)` y en `demanda_lag_24`, pero nunca "
+        "en `tipo_efectivo(D-1)`: no sabe de qué tipo de día viene su punto "
+        "de partida. El régimen de transición `no laborable → laborable` "
+        "(los lunes) es donde más se nota, y toda ventana de 7 días contiene "
+        "exactamente un lunes -- esta limitación es estado estacionario de "
+        "cualquier ventana de producción, no un transitorio que vaya a "
+        "desaparecer con más datos.",
+        "- **Techo de extrapolación.** El modelo (`DecisionTreeRegressor`) no "
+        "extrapola por encima del rango de entrenamiento: su predicción "
+        "máxima estaba clavada en 38.861,1 MW en agosto de 2026, y la demanda "
+        "real superó los 40.000 MW dos veces esa misma semana del 14/8/2026 -- "
+        "en esas horas la desviación entre predicción y demanda real es "
+        "grande por construcción del modelo, no por un fallo del pipeline.",
+        "",
+    ]
 
     return "\n".join(lineas) + "\n"
 
