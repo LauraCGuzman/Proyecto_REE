@@ -169,7 +169,9 @@ def test_idempotencia_dos_corridas():
 def test_muestra_insuficiente():
     """3 días de errores -> `mae` es `null` en las tres ventanas (7d/30d/90d)
     y `muestra_insuficiente` es `True`: ninguna ventana llega a los
-    `COBERTURA_MINIMA_DIAS` días de cobertura real."""
+    `COBERTURA_MINIMA_DIAS` fechas de calendario distintas que gobiernan la
+    guarda (PR fix-guarda-cobertura: antes era un span en días, `cobertura_dias`
+    < `COBERTURA_MINIMA_DIAS`; ahora es `dias_cubiertos`)."""
     ahora_utc = pd.Timestamp("2026-08-16T05:31:00Z")
     horizontes = _horizontes(3 * 24, inicio="2026-08-14T00:00:00Z")  # 3 días completos
 
@@ -192,7 +194,49 @@ def test_muestra_insuficiente():
     for nombre_ventana, valores in metricas["publicado"]["ventanas"].items():
         assert valores["mae"] is None, f"mae de {nombre_ventana} debería ser null"
         assert valores["sesgo_medio"] is None, f"sesgo_medio de {nombre_ventana} debería ser null"
-        assert valores["cobertura_dias"] < COBERTURA_MINIMA_DIAS
+        assert valores["dias_cubiertos"] < COBERTURA_MINIMA_DIAS
+        assert valores["cobertura_dias"] < COBERTURA_MINIMA_DIAS  # se conserva, ya no gobierna
+
+
+def test_siete_dias_consecutivos_escribe_mae():
+    """El caso que fallaba antes de este PR (pliego §1.0): siete días
+    calendario consecutivos, cada uno con horas publicadas 06:00Z-21:00Z (16
+    horas/día, el patrón real del cron). El span entre el primer y el último
+    horizonte es 6,6 días (6 días y 15 horas) -- con la guarda vieja
+    (`cobertura_dias >= COBERTURA_MINIMA_DIAS`) `mae` se quedaba en `null`
+    para siempre con la ventana llena. Con `dias_cubiertos` (7 fechas
+    distintas) `mae` se escribe."""
+    dias = ["2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17",
+            "2026-08-18", "2026-08-19"]
+    horizontes = [f"{dia}T{hora:02d}:00:00Z" for dia in dias for hora in range(6, 22)]
+    n = len(horizontes)
+    assert n == 7 * 16
+
+    errores = pd.DataFrame(
+        {
+            "fecha_evaluacion": ["2026-08-19T05:49:00Z"] * n,
+            "horizonte": horizontes,
+            "modelo": [NOMBRE_MODELO] * n,
+            "fecha_emision": ["2026-08-12T06:45:48Z"] * n,
+            "valor_predicho": [30_000.0] * n,
+            "valor_real": [30_500.0] * n,
+            "error": [500.0] * n,
+            "h_adelanto_h": [12.0] * n,  # publicado: h_adelanto_h > 0
+        }
+    )[COLUMNAS_ERRORES]
+
+    ahora_utc = pd.Timestamp("2026-08-19T05:49:00Z")
+    metricas = calcular_metricas(errores, NOMBRE_MODELO, ahora_utc)
+
+    ventana_7d = metricas["publicado"]["ventanas"]["7d"]
+    assert ventana_7d["cobertura_dias"] < COBERTURA_MINIMA_DIAS, (
+        "el span (6,6) debe seguir siendo menor que 7 -- es el hallazgo que "
+        "motiva este PR, no algo que este test deba corregir"
+    )
+    assert ventana_7d["dias_cubiertos"] == COBERTURA_MINIMA_DIAS
+    assert ventana_7d["mae"] is not None, "mae no debería ser None con 7 fechas distintas"
+    assert ventana_7d["mae"] == 500.0
+    assert ventana_7d["sesgo_medio"] == 500.0
 
 
 def main() -> int:
@@ -206,6 +250,8 @@ def main() -> int:
     print("✔ test_idempotencia_dos_corridas")
     test_muestra_insuficiente()
     print("✔ test_muestra_insuficiente")
+    test_siete_dias_consecutivos_escribe_mae()
+    print("✔ test_siete_dias_consecutivos_escribe_mae")
     print("\nTodos los tests de evaluar.py en verde.")
     return 0
 
