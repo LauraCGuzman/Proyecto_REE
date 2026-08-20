@@ -176,6 +176,54 @@ Queda una pregunta abierta sobre la serie oficial: no he verificado si el indica
 
 ---
 
+## El modelo en producción
+
+Desde el **14 de agosto de 2026** el Modelo A emite una previsión al día, sin intervención manual, y compara cada predicción con el dato real cuando la red lo publica. Todo lo anterior de este README es un ejercicio medido sobre datos históricos; esta sección es lo que ocurre cuando el mismo modelo tiene que funcionar todos los días.
+
+**Métrica viva, actualizada en cada corrida:** [`reports/estado_pipeline.md`](reports/estado_pipeline.md).
+
+### Cómo funciona
+
+Una acción programada de GitHub se dispara cada mañana en torno a las 05:45 UTC y hace dos cosas, en este orden y en dos commits separados:
+
+1. **Predice** el día natural siguiente al último dato disponible — 23, 24 o 25 horas según el cambio de hora, nunca 24 fijas.
+2. **Evalúa** las predicciones anteriores contra el consumo real, para las horas que ya tienen dato cerrado.
+
+El orden importa y los commits separados también. Si la evaluación falla, la predicción del día ya está guardada; una previsión que no se emitió a tiempo no se puede recuperar honestamente después. Al revés no se cumple: la evaluación se autocura sola al día siguiente, porque cada hora sin dato queda pendiente y se vuelve a intentar.
+
+El modelo **está congelado**. No se re-entrena, no se ajusta y no se sustituye: el pipeline es infraestructura alrededor de un modelo fijo, y su valor está en que los números que produce no los ha elegido nadie.
+
+### Qué se guarda, y por qué así
+
+Tres históricos que solo crecen y nunca se editan: las predicciones emitidas, los errores evaluados y —esto es lo menos obvio— **la entrada exacta que produjo cada predicción**. Sin lo tercero, dentro de tres meses no se podría distinguir "el modelo falló" de "el modelo leyó un dato malo", porque el runner es efímero y la descarga cruda no sobrevive a la corrida.
+
+Corregir una fila equivocada se hace añadiendo otra fila, nunca reescribiendo la anterior. Hay un precedente: la primera corrida se lanzó a mano por la tarde, para un día ya casi transcurrido. La fila era técnicamente correcta, pero se había emitido cuando el resultado ya existía, y todo el argumento del pipeline es que no. Se retiró revirtiendo el commit, no editando el fichero, y **el 13 de agosto es un hueco permanente en la serie**. Es lo correcto: ese día nunca tuvo una previsión emitida a tiempo.
+
+### Dos cortes que no se mezclan nunca
+
+Cuando la previsión se emite a las 05:45, unas ocho horas del día que predice ya han pasado. Esas horas se guardan, porque sirven para diagnosticar, pero **no cuentan como previsión** y no se agregan nunca con las demás en un mismo número. Cada fila lleva anotado cuántas horas de antelación tenía, así que el corte se recalcula en cada lectura en vez de quedar congelado en el código.
+
+Las horas realmente publicadas —las que se predijeron antes de que ocurrieran— son 16 al día.
+
+### El error en producción es mayor que el de la tabla de arriba, y se sabe por qué
+
+**No son comparables.** El 1.263 MW se midió sobre 4.336 horas de un semestre entero. La métrica viva se calcula sobre ventanas móviles de días, y hay dos limitaciones conocidas del modelo que la empujan hacia arriba:
+
+- **El arranque de la semana.** El modelo sabe qué tipo de día está prediciendo y cuánto se consumió ayer a la misma hora, pero **no sabe de qué tipo de día viene ese punto de partida**. Cuando el ancla es un domingo y el objetivo un lunes laborable, arranca de un nivel demasiado bajo y no tiene forma de corregirlo. En el histórico el caso frecuente es viernes → sábado, que aprende bien; los otros no. Como toda ventana de siete días contiene exactamente un lunes, esto no es un transitorio que desaparezca con más datos: es el suelo del modelo.
+- **El techo del árbol.** Ya está explicado más arriba en abstracto; en producción tiene un número exacto. La predicción máxima que el modelo puede emitir es **38.861,1 MW**, el promedio de su hoja más alta. En agosto de 2026 la demanda real superó los 40.000 MW en al menos dos horas de las evaluadas. En esas horas la desviación existe por construcción del modelo, no por un fallo del pipeline.
+
+La primera se podría atacar con otra variable. La segunda no: ninguna variable nueva arregla que un árbol de decisión no extrapole. Haría falta otra familia de modelo, y eso es otro proyecto.
+
+**Mientras la ventana no cubra al menos siete fechas distintas con horas publicadas, no se publica ningún error medio.** Se muestra un guion. Un error medio calculado sobre tres días es una mentira con formato de métrica, y preferimos el hueco visible al número tranquilizador.
+
+### Cómo falla
+
+Sin `try/except` amplios, sin reintentos silenciosos, sin pasos marcados como "ignorar si falla". Si la API no responde, si una hora llega incompleta o si un valor cae fuera del rango físicamente posible de la demanda peninsular, el proceso se detiene en rojo y no escribe nada a medias. Un fallo visible cuesta cinco minutos; un fallo silencioso contamina un histórico que solo crece.
+
+---
+
+---
+
 ## Datos y stack
 
 **Fuentes**
@@ -201,11 +249,15 @@ Encima de eso hay un **gate de regresión numérica**: un script que reejecuta e
 ```
 data/raw/        descargas crudas de e·sios y AEMET (no versionado)
 data/processed/  series limpias y consolidadas (versionado: git hace de control de cambios)
+data/            históricos del pipeline diario: predicciones, errores y anclas usadas
 src/             clientes de API, rutas, validación de calidad, utilidades de modelado
 notebooks/       modelo de demanda y detección de anomalías
+pipeline/        scripts de predicción y evaluación diarias
+reports/         estado del pipeline, regenerado en cada corrida
+.github/         acción programada que ejecuta el pipeline
 scripts/         gate de regresión numérica
 modelos/         modelo serializado y foto de referencia de los números
-tests/           test de paridad notebook ↔ src
+tests/           test de paridad notebook ↔ src, y tests del pipeline
 ```
 
 ---
