@@ -1,5 +1,5 @@
 {
-  "actualizado_utc": "2026-08-19T05:49:17Z",
+  "actualizado_utc": "2026-08-20T05:48:57Z",
   "modelo": "v1",
   "muestra_insuficiente": true,
   "publicado": {
@@ -8,20 +8,23 @@
       "7d": {
         "mae": null,
         "sesgo_medio": null,
-        "n_horas": 79,
-        "cobertura_dias": 4.6
+        "n_horas": 95,
+        "cobertura_dias": 5.6,
+        "dias_cubiertos": 6
       },
       "30d": {
         "mae": null,
         "sesgo_medio": null,
-        "n_horas": 79,
-        "cobertura_dias": 4.6
+        "n_horas": 95,
+        "cobertura_dias": 5.6,
+        "dias_cubiertos": 6
       },
       "90d": {
         "mae": null,
         "sesgo_medio": null,
-        "n_horas": 79,
-        "cobertura_dias": 4.6
+        "n_horas": 95,
+        "cobertura_dias": 5.6,
+        "dias_cubiertos": 6
       }
     }
   },
@@ -29,22 +32,25 @@
     "criterio": "h_adelanto_h <= 0",
     "ventanas": {
       "7d": {
-        "mae": null,
-        "sesgo_medio": null,
-        "n_horas": 48,
-        "cobertura_dias": 5.2
+        "mae": 716.54,
+        "sesgo_medio": 399.63,
+        "n_horas": 56,
+        "cobertura_dias": 6.2,
+        "dias_cubiertos": 8
       },
       "30d": {
-        "mae": null,
-        "sesgo_medio": null,
-        "n_horas": 48,
-        "cobertura_dias": 5.2
+        "mae": 716.54,
+        "sesgo_medio": 399.63,
+        "n_horas": 56,
+        "cobertura_dias": 6.2,
+        "dias_cubiertos": 8
       },
       "90d": {
-        "mae": null,
-        "sesgo_medio": null,
-        "n_horas": 48,
-        "cobertura_dias": 5.2
+        "mae": 716.54,
+        "sesgo_medio": 399.63,
+        "n_horas": 56,
+        "cobertura_dias": 6.2,
+        "dias_cubiertos": 8
       }
     }
   },
