@@ -170,7 +170,7 @@ Queda una pregunta abierta sobre la serie oficial: no he verificado si el indica
 
 **El modelo asume que el día anterior se conoce completo.** Usa el consumo de ayer a la misma hora, lo que implica que a las 00:00 ya tengo las 24 horas de ayer cerradas. Es defendible para un ejercicio, pero un margen de emisión realista obligaría a otra arquitectura.
 
-**El trozo de 2026 se leyó cuatro veces durante la exploración del modelo B**, tres de ellas con una configuración fijada a mano en vez de elegida en validación. El 1.005 MW es correcto, pero tiene algo menos de estatus como "dato nunca visto" que el 1.263 del modelo A.
+**El trozo de 2026 se leyó cinco veces**: cuatro durante la exploración del modelo B, tres de ellas con una configuración fijada a mano en vez de elegida en validación, y una quinta el 20/8/2026 en el sandbox de `lag_168` (v2), sobre un entrenamiento que no descartaba el prefijo de NaN inicial. Esa quinta lectura no se usa como criterio de nada ni entra en ningún resultado publicado aquí. El 1.005 MW es correcto, pero tiene algo menos de estatus como "dato nunca visto" que el 1.263 del modelo A.
 
 **Durante el apagón de abril de 2025, la previsión oficial se fue a cero unas 35 horas.** No se puede comparar un modelo contra una previsión que no existe, así que ese tramo queda fuera del benchmark.
 
