@@ -36,20 +36,29 @@ jobs:
           import sklearn
           import holidays
           import joblib
-          from src import datos, features, modelo, paths
+          from src import datos, features, features_v2, modelo, paths
           print(f'scikit-learn {sklearn.__version__}')
           print(f'holidays {holidays.__version__}')
           "
 
       - name: Canario de paridad (deriva de dependencias)
-        run: pytest tests/test_paridad.py
+        run: pytest tests/test_paridad.py tests/test_paridad_v2.py
 
-      - name: Predicción diaria
+      # --- Emisión paralela (Fase 5bis, PR B) ---------------------------
+      # Tres pasos, tres commits separados (pliego §3.1): "si v2 falla, v1
+      # emite igual". Sin try/except, sin continue-on-error: el aislamiento
+      # lo da el ORDEN de los pasos, no una guarda -- v1 predice y commitea
+      # (Paso 1) antes de que v2 exista siquiera. Si el Paso 2 falla, el job
+      # sale en rojo aquí mismo y el Paso 3 (evaluación) no llega a correr
+      # -- ese día no se evalúa nada, pero se autocura solo al día
+      # siguiente (cada hora sin dato queda pendiente y se reintenta).
+
+      - name: "Paso 1: predicción v1"
         env:
           API_ESIOS: ${{ secrets.API_ESIOS }}
-        run: python pipeline/predecir.py
+        run: python pipeline/predecir.py --modelo v1
 
-      - name: Commit y push de la predicción (COMMIT A)
+      - name: "Paso 1: commit y push de v1 (COMMIT A)"
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -66,33 +75,59 @@ jobs:
             git add data/ancla_usada.csv
           fi
           if git diff --cached --quiet; then
-            echo "Sin cambios en data/predicciones.csv ni data/ancla_usada.csv -- nada que commitear."
+            echo "Sin cambios en data/predicciones.csv ni data/ancla_usada.csv (v1) -- nada que commitear."
             exit 0
           fi
-          git commit -m "chore: predicción diaria $(date -u +%Y-%m-%d)"
+          git commit -m "chore: predicción diaria v1 $(date -u +%Y-%m-%d)"
           git push
 
-      - name: Evaluación diaria
+      - name: "Paso 2: predicción v2"
+        env:
+          API_ESIOS: ${{ secrets.API_ESIOS }}
+        run: python pipeline/predecir.py --modelo v2
+
+      - name: "Paso 2: commit y push de v2 (COMMIT B)"
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/predicciones.csv
+          # Misma guarda de arranque que en el Paso 1 -- y además el caso
+          # normal en régimen: v1 ya commiteó el ancla en el Paso 1
+          # (ancla_ya_registrada), así que aquí casi nunca hay nada nuevo
+          # que añadir de ancla_usada.csv. `git add` no falla si el fichero
+          # existe pero no cambió, así que no hace falta distinguir los dos
+          # casos.
+          if [ -f data/ancla_usada.csv ]; then
+            git add data/ancla_usada.csv
+          fi
+          if git diff --cached --quiet; then
+            echo "Sin cambios en data/predicciones.csv ni data/ancla_usada.csv (v2) -- nada que commitear."
+            exit 0
+          fi
+          git commit -m "chore: predicción diaria v2 $(date -u +%Y-%m-%d)"
+          git push
+
+      - name: "Paso 3: evaluación (v1 y v2)"
         env:
           API_ESIOS: ${{ secrets.API_ESIOS }}
         run: python pipeline/evaluar.py
 
-      - name: Commit y push de la evaluación (COMMIT B)
+      - name: "Paso 3: commit y push de la evaluación (COMMIT C)"
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           # Guarda de ARRANQUE, no permanente: data/errores.csv todavía no está
           # versionado en main, así que puede no existir en el checkout -- un
-          # día sin horas evaluables no lo escribe. Misma razón que la guarda
-          # de COMMIT A; deja de tener efecto en cuanto este commit lo
-          # versione por primera vez.
+          # día sin horas evaluables no lo escribe. Misma razón que las
+          # guardas de los COMMIT A/B; deja de tener efecto en cuanto este
+          # commit lo versione por primera vez.
           if [ -f data/errores.csv ]; then
             git add data/errores.csv
           fi
           # Sin guarda: si evaluar.py sale en verde, data/metricas.json y
           # reports/estado_pipeline.md se reescriben enteros SIEMPRE (§3.6,
-          # §3.7 del pliego) -- que falten aquí es un bug y debe fallar en
-          # rojo, no pasar en silencio.
+          # §3.7 del pliego de Fase 2) -- que falten aquí es un bug y debe
+          # fallar en rojo, no pasar en silencio.
           git add data/metricas.json reports/estado_pipeline.md
           if git diff --cached --quiet; then
             echo "Sin cambios en la evaluación -- nada que commitear."

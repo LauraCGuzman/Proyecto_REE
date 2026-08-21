@@ -23,8 +23,11 @@ for _stream in (sys.stdout, sys.stderr):
 from pipeline.evaluar import (
     COLUMNAS_ERRORES,
     COBERTURA_MINIMA_DIAS,
+    MODELOS_ACTIVOS,
     NOMBRE_MODELO,
+    NOMBRE_MODELO_V2,
     calcular_metricas,
+    construir_estado_pipeline_md,
     construir_filas_error,
     filas_pendientes,
 )
@@ -239,6 +242,90 @@ def test_siete_dias_consecutivos_escribe_mae():
     assert ventana_7d["sesgo_medio"] == 500.0
 
 
+def test_referencia_v1_y_v2_no_comparables():
+    """Fase 5bis PR B (emisión paralela): el bloque `referencia` cambia de
+    forma según el modelo -- v1 sigue con `mae_test_notebook` (sin tocar);
+    v2 usa `mae_val_notebook` y lleva una `nota` explícita de que no es de
+    test. Los dos modelos activos deben tener referencia declarada."""
+    ahora_utc = pd.Timestamp("2026-08-20T05:31:00Z")
+    errores_vacio = pd.DataFrame(columns=COLUMNAS_ERRORES)
+
+    assert MODELOS_ACTIVOS == [NOMBRE_MODELO, NOMBRE_MODELO_V2]
+
+    metricas_v1 = calcular_metricas(errores_vacio, NOMBRE_MODELO, ahora_utc)
+    ref_v1 = metricas_v1["referencia"]
+    assert "mae_test_notebook" in ref_v1
+    assert "mae_val_notebook" not in ref_v1
+    assert "nota" not in ref_v1
+
+    metricas_v2 = calcular_metricas(errores_vacio, NOMBRE_MODELO_V2, ahora_utc)
+    ref_v2 = metricas_v2["referencia"]
+    assert "mae_val_notebook" in ref_v2
+    assert "mae_test_notebook" not in ref_v2
+    assert "nota" in ref_v2 and "test" in ref_v2["nota"].lower()
+
+    # La referencia de persistencia sí es compartida (no depende del modelo).
+    assert ref_v1["mae_baseline_persistencia"] == ref_v2["mae_baseline_persistencia"]
+
+
+def test_v2_aparece_con_guion_el_dia_uno():
+    """Pliego §3.5, último punto: "v2 arranca de cero y estará en `—` sus
+    primeros seis días. Es correcto." -- con errores.csv sin ninguna fila
+    `modelo == "v2"` todavía, calcular_metricas("v2", ...) debe devolver un
+    bloque con mae/sesgo en null (no lanzar, no devolver un bloque vacío)."""
+    ahora_utc = pd.Timestamp("2026-08-20T05:31:00Z")
+    # errores.csv con SOLO filas de v1 -- v2 nunca ha evaluado nada todavía.
+    errores_solo_v1 = pd.DataFrame(
+        {
+            "fecha_evaluacion": ["2026-08-20T05:31:00Z"] * 24,
+            "horizonte": _horizontes(24, inicio="2026-08-19T00:00:00Z"),
+            "modelo": [NOMBRE_MODELO] * 24,
+            "fecha_emision": ["2026-08-19T05:45:00Z"] * 24,
+            "valor_predicho": [30_000.0] * 24,
+            "valor_real": [30_500.0] * 24,
+            "error": [500.0] * 24,
+            "h_adelanto_h": [12.0] * 24,
+        }
+    )[COLUMNAS_ERRORES]
+
+    metricas_v2 = calcular_metricas(errores_solo_v1, NOMBRE_MODELO_V2, ahora_utc)
+    assert metricas_v2["modelo"] == NOMBRE_MODELO_V2
+    assert metricas_v2["muestra_insuficiente"] is True
+    for valores in metricas_v2["publicado"]["ventanas"].values():
+        assert valores["mae"] is None
+        assert valores["n_horas"] == 0
+
+
+def test_construir_estado_pipeline_md_dos_bloques():
+    """`estado_pipeline.md` con los dos modelos, cada uno en su propio
+    bloque (pliego §3.6): sin mezclar sus números, y sin que el bloque de
+    v2 arrastre la prosa de "techo de extrapolación" verificada solo para
+    v1 (pliego, comprobación de esta sesión)."""
+    ahora_utc = pd.Timestamp("2026-08-20T05:31:00Z")
+    errores_vacio = pd.DataFrame(columns=COLUMNAS_ERRORES)
+
+    metricas_por_modelo = {
+        NOMBRE_MODELO: calcular_metricas(errores_vacio, NOMBRE_MODELO, ahora_utc),
+        NOMBRE_MODELO_V2: calcular_metricas(errores_vacio, NOMBRE_MODELO_V2, ahora_utc),
+    }
+    n_dias_por_modelo = {NOMBRE_MODELO: 0, NOMBRE_MODELO_V2: 0}
+
+    md = construir_estado_pipeline_md(metricas_por_modelo, n_dias_por_modelo)
+
+    assert "## Modelo: v1" in md
+    assert "## Modelo: v2" in md
+    assert md.index("## Modelo: v1") < md.index("## Modelo: v2"), (
+        "v1 va primero, mismo orden que los pasos del pliego"
+    )
+    assert "38.861,1 MW" in md, "la prosa de v1 (techo de extrapolación) debe seguir presente"
+    # La prosa de "techo de extrapolación"/"arranque de la semana" es
+    # observación medida de v1: no debe aparecer también bajo el bloque de
+    # v2 sin haberse medido para v2.
+    bloque_v2 = md[md.index("## Modelo: v2"):]
+    assert "38.861,1 MW" not in bloque_v2
+    assert "no comparable" in bloque_v2.lower() or "no es comparable" in bloque_v2.lower()
+
+
 def main() -> int:
     test_deteccion_de_pendientes()
     print("✔ test_deteccion_de_pendientes")
@@ -252,6 +339,12 @@ def main() -> int:
     print("✔ test_muestra_insuficiente")
     test_siete_dias_consecutivos_escribe_mae()
     print("✔ test_siete_dias_consecutivos_escribe_mae")
+    test_referencia_v1_y_v2_no_comparables()
+    print("✔ test_referencia_v1_y_v2_no_comparables")
+    test_v2_aparece_con_guion_el_dia_uno()
+    print("✔ test_v2_aparece_con_guion_el_dia_uno")
+    test_construir_estado_pipeline_md_dos_bloques()
+    print("✔ test_construir_estado_pipeline_md_dos_bloques")
     print("\nTodos los tests de evaluar.py en verde.")
     return 0
 

@@ -26,6 +26,15 @@ recalcular métricas desde `errores.csv` completo -> `metricas.json` ->
 `continue-on-error`: si e·sios no responde, el job muere en rojo y no
 escribe nada parcial.
 
+Emisión paralela (Fase 5bis, PR B): a diferencia de `predecir.py`, este
+script corre UNA sola vez por corrida, no una por modelo -- evalúa las
+pendientes de todos los modelos presentes en `predicciones.csv` en la misma
+pasada (`filas_pendientes`/`construir_filas_error` ya trabajan por la clave
+`(horizonte, modelo)`, sin cambios en este PR). Solo el tramo de métricas
+(`_recalcular_y_escribir`) recorre `MODELOS_ACTIVOS` explícitamente, un
+bloque por modelo en `metricas.json` y en `reports/estado_pipeline.md` --
+nunca agregados entre sí (§3.5 del pliego del PR B).
+
 Uso:
     evaluar.py                        # normal (cron): evalúa pendientes.
     evaluar.py --ignorar-antiguas     # desbloquea pendientes > 15 días,
@@ -56,6 +65,12 @@ from src.paths import DIR_DATA, DIR_REPORTS
 from src.quality import assert_rango_fisico
 
 NOMBRE_MODELO = "v1"
+
+# Emisión paralela (Fase 5bis, PR B): evaluar.py corre una sola vez por
+# corrida (a diferencia de predecir.py) y recorre los modelos presentes en
+# este orden -- v1 primero, mismo orden que los pasos del pliego §3.1.
+NOMBRE_MODELO_V2 = "v2"
+MODELOS_ACTIVOS = [NOMBRE_MODELO, NOMBRE_MODELO_V2]
 
 RUTA_PREDICCIONES = DIR_DATA / "predicciones.csv"
 RUTA_ERRORES = DIR_DATA / "errores.csv"
@@ -93,6 +108,45 @@ VENTANAS_DIAS = {"7d": 7, "30d": 30, "90d": 90}
 MAE_TEST_NOTEBOOK_MW = 1263.02
 SESGO_TEST_NOTEBOOK_MW = 755.15
 MAE_BASELINE_PERSISTENCIA_MW = 1843
+
+# Referencia de v2 (Fase 5bis, PR A) -- mismo criterio de "verdad congelada,
+# no leída en caliente" que la de v1, pero de otra naturaleza: PR A no lee
+# el conjunto de test (pliego Fase5bis, Parte 2), así que no existe un MAE
+# de test para v2 con el que rellenar los campos de arriba. Estos dos salen
+# de `modelos/modelo_v2.json` (`mae_val`/`sesgo_val`, validación 2025) --
+# ver la nota que va con ellos en `_referencia_de_modelo`, no comparables
+# con los de v1 (test).
+MAE_VAL_NOTEBOOK_V2_MW = 997.25
+SESGO_VAL_NOTEBOOK_V2_MW = 124.50
+
+
+def _referencia_de_modelo(modelo: str) -> dict:
+    """Bloque `referencia` de `calcular_metricas`, por modelo -- antes era
+    fijo (siempre las constantes de v1); con dos modelos cada uno declara la
+    suya, y v2 no tiene test (ver comentario de
+    `MAE_VAL_NOTEBOOK_V2_MW` arriba), así que su bloque no se llama
+    `mae_test_notebook` como el de v1: llamarlo igual sería presentar un
+    número de validación como si fuera de test, la misma fuga de encuadre
+    que este proyecto ya evita en el README ("no son comparables")."""
+    if modelo == NOMBRE_MODELO:
+        return {
+            "mae_test_notebook": MAE_TEST_NOTEBOOK_MW,
+            "sesgo_test_notebook": SESGO_TEST_NOTEBOOK_MW,
+            "mae_baseline_persistencia": MAE_BASELINE_PERSISTENCIA_MW,
+        }
+    if modelo == NOMBRE_MODELO_V2:
+        return {
+            "mae_val_notebook": MAE_VAL_NOTEBOOK_V2_MW,
+            "sesgo_val_notebook": SESGO_VAL_NOTEBOOK_V2_MW,
+            "mae_baseline_persistencia": MAE_BASELINE_PERSISTENCIA_MW,
+            "nota": (
+                "v2 no tiene MAE de test en este pliego (PR A de Fase5bis no "
+                "lee el conjunto de test): esta referencia es de VALIDACION "
+                "2025 (modelos/modelo_v2.json), no comparable con la "
+                "mae_test_notebook de v1."
+            ),
+        }
+    raise ValueError(f"Sin referencia declarada para el modelo {modelo!r}.")
 
 
 def _leer_csv(ruta: Path) -> pd.DataFrame:
@@ -288,19 +342,20 @@ def calcular_metricas(df_errores: pd.DataFrame, modelo: str, ahora_utc: pd.Times
         "muestra_insuficiente": muestra_insuficiente,
         "publicado": {"criterio": "h_adelanto_h > 0", "ventanas": publicado},
         "diagnostico": {"criterio": "h_adelanto_h <= 0", "ventanas": diagnostico},
-        "referencia": {
-            "mae_test_notebook": MAE_TEST_NOTEBOOK_MW,
-            "sesgo_test_notebook": SESGO_TEST_NOTEBOOK_MW,
-            "mae_baseline_persistencia": MAE_BASELINE_PERSISTENCIA_MW,
-        },
+        "referencia": _referencia_de_modelo(modelo),
     }
 
 
-def escribir_metricas(metricas: dict) -> None:
-    """Fichero derivado: se reescribe entero en cada corrida (§3.6)."""
+def escribir_metricas(metricas_por_modelo: dict[str, dict]) -> None:
+    """Fichero derivado: se reescribe entero en cada corrida (§3.6).
+
+    Emisión paralela (Fase 5bis PR B): antes `metricas.json` era un único
+    bloque (el de v1, con `modelo` dentro); ahora es un objeto con una clave
+    por modelo (`{"v1": {...}, "v2": {...}}`), cada valor el mismo bloque de
+    siempre -- dos bloques, no una fusión de los dos en un número (§3.5)."""
     RUTA_METRICAS.parent.mkdir(parents=True, exist_ok=True)
     RUTA_METRICAS.write_text(
-        json.dumps(metricas, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        json.dumps(metricas_por_modelo, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
 
 
@@ -312,47 +367,53 @@ def _formatear_sesgo(valor) -> str:
     return f"{valor:+.2f}" if valor is not None else "—"
 
 
-def construir_estado_pipeline_md(metricas: dict, n_dias_serie: int) -> str:
-    """Fichero generado, se reescribe entero (§3.7). Primera línea marca el
-    fichero como no editable a mano. Métrica publicada solamente -- nunca
-    agregada con la diagnóstica (§3.6, regla 1).
+def _bloque_md_modelo(metricas: dict, n_dias_serie: int) -> list[str]:
+    """Bloque de un solo modelo, mismo contenido que producía
+    `construir_estado_pipeline_md` antes del PR B (Fase5bis, emisión
+    paralela) cuando solo existía v1 -- ahora se llama una vez por modelo
+    presente en `MODELOS_ACTIVOS` y `construir_estado_pipeline_md` concatena
+    los bloques (§3.6 del pliego del PR B: "los dos modelos, pegados
+    enteros"). Métrica publicada solamente -- nunca agregada con la
+    diagnóstica (§3.6, regla 1 del pliego de Fase 2).
 
-    Dos magnitudes distintas conviven aquí y no comparten nombre (pliego PR2
-    §2.1a): `n_dias_serie` cuenta fechas sobre TODO `errores.csv` (publicado +
-    diagnóstico), la tabla cuenta solo publicado por ventana. Se mantiene el
-    cálculo de `n_dias_serie` sobre el fichero completo -- se pierde precisión
-    filtrando a publicado solamente, y el dato de que el histórico arranca
-    antes de la primera fila publicada tiene valor propio -- pero se renombra
-    para que dejen de leerse como la misma cosa.
+    `n_dias_serie` es ya SOLO de este modelo (columna `modelo` de
+    `errores.csv` filtrada aguas arriba, ver `_recalcular_y_escribir`): antes
+    de que existiera v2 esto no hacía falta decirlo porque solo había un
+    modelo en el fichero; con dos, contar fechas sin filtrar por modelo
+    mezclaría los históricos de v1 y v2 en un solo número -- justo la
+    agregación entre modelos que el pliego del PR B prohíbe (§3.5).
 
-    La tabla muestra las dos magnitudes de cobertura por ventana (pliego PR2
-    §2.2d): `dias_cubiertos` (fechas de calendario distintas con al menos una
-    hora publicada) es la que gobierna la guarda de `_metrica_ventana`;
-    `cobertura_dias` (el span, primer a último horizonte) se conserva como
-    dato informativo pero no decide nada. Mostrar solo `cobertura_dias`
-    escondía la contradicción que arregló el PR 1: un `mae` escrito junto a
-    una cobertura que parece insuficiente."""
+    Referencia de la tabla (columna final): el campo de `metricas
+    ["referencia"]` cambia de nombre según el modelo (`mae_test_notebook`
+    para v1, `mae_val_notebook` para v2 -- ver `_referencia_de_modelo`), así
+    que aquí se toma genérico y se etiqueta con la palabra correspondiente
+    para no dar a entender que los dos son el mismo tipo de número."""
+    referencia = metricas["referencia"]
+    if "mae_test_notebook" in referencia:
+        ref_valor = referencia["mae_test_notebook"]
+        ref_etiqueta = "MAE test notebook (MW)"
+    else:
+        ref_valor = referencia["mae_val_notebook"]
+        ref_etiqueta = "MAE val notebook (MW)"
+
     filas_tabla = []
     for ventana, valores in metricas["publicado"]["ventanas"].items():
         filas_tabla.append(
             f"| {ventana} | {_formatear_mae(valores['mae'])} | "
             f"{_formatear_sesgo(valores['sesgo_medio'])} | {valores['n_horas']} | "
             f"{valores['dias_cubiertos']} | {valores['cobertura_dias']} | "
-            f"{metricas['referencia']['mae_test_notebook']:.2f} |"
+            f"{ref_valor:.2f} |"
         )
     tabla = "\n".join(filas_tabla)
 
     lineas = [
-        "<!-- GENERADO POR pipeline/evaluar.py -- NO EDITAR A MANO -->",
-        "",
-        "# Estado del pipeline REE",
+        f"## Modelo: {metricas['modelo']}",
         "",
         f"Última corrida: {metricas['actualizado_utc']}",
-        f"Modelo: {metricas['modelo']}",
-        f"Fechas presentes en `data/errores.csv` (publicadas + diagnóstico): "
-        f"{n_dias_serie}",
+        f"Fechas presentes en `data/errores.csv` para este modelo "
+        f"(publicadas + diagnóstico): {n_dias_serie}",
         "",
-        "## Métrica publicada (`h_adelanto_h > 0`)",
+        "### Métrica publicada (`h_adelanto_h > 0`)",
         "",
         "`Fechas cubiertas` cuenta fechas de calendario distintas con al menos "
         "una hora publicada en la ventana: es la magnitud que decide si el MAE "
@@ -364,8 +425,8 @@ def construir_estado_pipeline_md(metricas: dict, n_dias_serie: int) -> str:
         "huecos entre ellas (fechas dispersas en el tiempo estiran el span sin "
         "sumar fechas cubiertas).",
         "",
-        "| Ventana | MAE (MW) | Sesgo medio (MW) | n horas | "
-        "Fechas cubiertas (gobierna) | Span (días) | MAE test notebook (MW) |",
+        f"| Ventana | MAE (MW) | Sesgo medio (MW) | n horas | "
+        f"Fechas cubiertas (gobierna) | Span (días) | {ref_etiqueta} |",
         "|---|---|---|---|---|---|---|",
         tabla,
         "",
@@ -381,33 +442,77 @@ def construir_estado_pipeline_md(metricas: dict, n_dias_serie: int) -> str:
             "",
         ]
 
-    lineas += [
-        "## Por qué el MAE de producción no coincide con el del notebook",
+    if "mae_test_notebook" in referencia:
+        lineas += [
+            "### Por qué el MAE de producción no coincide con el del notebook",
+            "",
+            "El MAE de producción de la tabla de arriba no es directamente "
+            f"comparable al {ref_valor:.2f} MW medido en el conjunto de test "
+            "del notebook (`notebooks/modelo_demanda.ipynb`, celda 28). Dos "
+            "limitaciones conocidas y diagnosticadas del modelo -- no fallos "
+            "del pipeline -- explican buena parte de la diferencia:",
+            "",
+            "- **Arranque de la semana.** El modelo condiciona el nivel de la "
+            "predicción en `tipo_efectivo(D)` y en `demanda_lag_24`, pero nunca "
+            "en `tipo_efectivo(D-1)`: no sabe de qué tipo de día viene su punto "
+            "de partida. El régimen de transición `no laborable → laborable` "
+            "(los lunes) es donde más se nota, y toda ventana de 7 días contiene "
+            "exactamente un lunes -- esta limitación es estado estacionario de "
+            "cualquier ventana de producción, no un transitorio que vaya a "
+            "desaparecer con más datos.",
+            "- **Techo de extrapolación.** El modelo (`DecisionTreeRegressor`) no "
+            "extrapola por encima del rango de entrenamiento: su predicción "
+            "máxima estaba clavada en 38.861,1 MW en agosto de 2026, y la demanda "
+            "real superó los 40.000 MW dos veces esa misma semana del 14/8/2026 -- "
+            "en esas horas la desviación entre predicción y demanda real es "
+            "grande por construcción del modelo, no por un fallo del pipeline.",
+            "",
+        ]
+    else:
+        nota = referencia.get("nota", "")
+        lineas += [
+            "### Por qué esta referencia no es comparable con la de v1",
+            "",
+            f"El {ref_valor:.2f} MW de la columna de referencia es un MAE de "
+            "VALIDACIÓN, no de test. " + nota,
+            "",
+            "No hay una sección de \"limitaciones diagnosticadas\" propia de v2 "
+            "todavía: las de v1 (arranque de la semana, techo de extrapolación) "
+            "son observaciones medidas sobre el árbol de v1, no se asumen "
+            "iguales para v2 sin medirlas -- queda para cuando la ventana de "
+            "seis semanas (pliego Fase5bis, 0.1) dé señal suficiente.",
+            "",
+        ]
+
+    return lineas
+
+
+def construir_estado_pipeline_md(
+    metricas_por_modelo: dict[str, dict], n_dias_por_modelo: dict[str, int]
+) -> str:
+    """Fichero generado, se reescribe entero (§3.7 del pliego de Fase 2).
+    Primera línea marca el fichero como no editable a mano.
+
+    Emisión paralela (Fase 5bis PR B, §3.6): un bloque `## Modelo: vX` por
+    modelo presente en `metricas_por_modelo`, en el orden de
+    `MODELOS_ACTIVOS` (v1 primero) -- "los dos modelos, pegados enteros", no
+    resumidos ni comparados entre sí en este fichero (eso es la Parte 4 del
+    pliego, el panel de Streamlit, todavía sin construir)."""
+    lineas = [
+        "<!-- GENERADO POR pipeline/evaluar.py -- NO EDITAR A MANO -->",
         "",
-        "El MAE de producción de la tabla de arriba no es directamente "
-        "comparable al "
-        f"{metricas['referencia']['mae_test_notebook']:.2f} MW medido en el "
-        "conjunto de test del notebook "
-        "(`notebooks/modelo_demanda.ipynb`, celda 28). Dos limitaciones "
-        "conocidas y diagnosticadas del modelo -- no fallos del pipeline -- "
-        "explican buena parte de la diferencia:",
-        "",
-        "- **Arranque de la semana.** El modelo condiciona el nivel de la "
-        "predicción en `tipo_efectivo(D)` y en `demanda_lag_24`, pero nunca "
-        "en `tipo_efectivo(D-1)`: no sabe de qué tipo de día viene su punto "
-        "de partida. El régimen de transición `no laborable → laborable` "
-        "(los lunes) es donde más se nota, y toda ventana de 7 días contiene "
-        "exactamente un lunes -- esta limitación es estado estacionario de "
-        "cualquier ventana de producción, no un transitorio que vaya a "
-        "desaparecer con más datos.",
-        "- **Techo de extrapolación.** El modelo (`DecisionTreeRegressor`) no "
-        "extrapola por encima del rango de entrenamiento: su predicción "
-        "máxima estaba clavada en 38.861,1 MW en agosto de 2026, y la demanda "
-        "real superó los 40.000 MW dos veces esa misma semana del 14/8/2026 -- "
-        "en esas horas la desviación entre predicción y demanda real es "
-        "grande por construcción del modelo, no por un fallo del pipeline.",
+        "# Estado del pipeline REE",
         "",
     ]
+
+    for modelo in MODELOS_ACTIVOS:
+        if modelo not in metricas_por_modelo:
+            continue
+        lineas += _bloque_md_modelo(metricas_por_modelo[modelo], n_dias_por_modelo[modelo])
+        lineas += ["---", ""]
+
+    if lineas[-2:] == ["---", ""]:
+        lineas = lineas[:-2]
 
     return "\n".join(lineas) + "\n"
 
@@ -415,24 +520,49 @@ def construir_estado_pipeline_md(metricas: dict, n_dias_serie: int) -> str:
 def _recalcular_y_escribir(ahora_utc: pd.Timestamp) -> None:
     """Último tramo de §3.8: recalcular desde `errores.csv` completo ->
     `metricas.json` -> `estado_pipeline.md`. Se llama tanto desde el flujo
-    normal como desde `--reevaluar`."""
+    normal como desde `--reevaluar`.
+
+    Emisión paralela (Fase 5bis PR B, §3.2 punto 4): recorre
+    `MODELOS_ACTIVOS` -- `calcular_metricas` ya filtra `df_errores` por
+    modelo internamente (línea `df_modelo = df_errores[df_errores["modelo"]
+    == modelo]`), así que se le pasa `errores_completo` sin prefiltrar y
+    cada modelo recibe su propio bloque, incluido v2 el primer día que corre
+    (con `errores_completo` sin ninguna fila `modelo == "v2"` todavía --
+    `calcular_metricas` da `mae: null` en todas las ventanas, no un bloque
+    ausente: v2 tiene que aparecer con `—` desde el día uno, pliego §3.5
+    último punto)."""
     errores_completo = _leer_csv(RUTA_ERRORES) if RUTA_ERRORES.exists() else pd.DataFrame(
         columns=COLUMNAS_ERRORES
     )
-    metricas = calcular_metricas(errores_completo, NOMBRE_MODELO, ahora_utc)
-    escribir_metricas(metricas)
 
-    if errores_completo.empty:
-        n_dias_serie = 0
-    else:
-        n_dias_serie = int(
-            pd.to_datetime(errores_completo["horizonte"], utc=True).dt.date.nunique()
+    metricas_por_modelo = {}
+    n_dias_por_modelo = {}
+    for modelo in MODELOS_ACTIVOS:
+        metricas_por_modelo[modelo] = calcular_metricas(errores_completo, modelo, ahora_utc)
+
+        # n_dias_serie por modelo, no global (§3.5): mezclar las fechas de
+        # v1 y v2 en una sola cuenta agregaría los dos históricos en un
+        # número, justo lo que el pliego prohíbe.
+        errores_modelo = (
+            errores_completo[errores_completo["modelo"] == modelo]
+            if not errores_completo.empty
+            else errores_completo
         )
+        if errores_modelo.empty:
+            n_dias_por_modelo[modelo] = 0
+        else:
+            n_dias_por_modelo[modelo] = int(
+                pd.to_datetime(errores_modelo["horizonte"], utc=True).dt.date.nunique()
+            )
+
+    escribir_metricas(metricas_por_modelo)
 
     RUTA_ESTADO.parent.mkdir(parents=True, exist_ok=True)
-    RUTA_ESTADO.write_text(construir_estado_pipeline_md(metricas, n_dias_serie), encoding="utf-8")
+    RUTA_ESTADO.write_text(
+        construir_estado_pipeline_md(metricas_por_modelo, n_dias_por_modelo), encoding="utf-8"
+    )
 
-    print(f"metricas.json y {RUTA_ESTADO.name} actualizados.")
+    print(f"metricas.json y {RUTA_ESTADO.name} actualizados ({', '.join(MODELOS_ACTIVOS)}).")
 
 
 def _reevaluar(desde: str, hasta: str, ahora_utc: pd.Timestamp) -> int:

@@ -29,9 +29,16 @@ haya escrito de verdad -- ver su docstring), y `src.quality.
 assert_rango_fisico` valida tanto `demanda_lag_24` como las predicciones
 del modelo contra el rango físicamente posible de la demanda peninsular.
 
+Emisión paralela (Fase 5bis, PR B): `--modelo` es obligatorio, sin default.
+El cron invoca este script una vez por modelo, en pasos y commits separados
+(pliego §3.1) -- si v2 falla, v1 ya emitió y commiteó antes, y el paso de v2
+falla en rojo sin tocar lo de v1 (nada de `try/except` ni `continue-on-error`
+alrededor: el aislamiento lo da el orden de los pasos, no una guarda).
+
 Uso:
-    predecir.py                # normal (cron): exige ancla == ayer (Madrid).
-    predecir.py --recuperar    # manual: acepta un ancla más antigua.
+    predecir.py --modelo v1                # normal (cron): ancla == ayer (Madrid).
+    predecir.py --modelo v2                # normal (cron): mismo ancla, más demanda_lag_168.
+    predecir.py --modelo v1 --recuperar    # manual: acepta un ancla más antigua.
 """
 from __future__ import annotations
 
@@ -56,13 +63,32 @@ from src.features import (
     anadir_festivos_puentes,
     mapear_tipo_efectivo,
 )
-from src.modelo import cargar_modelo
+from src.features_v2 import FEATURES_6F
+from src.modelo import RUTA_METADATOS_V1, RUTA_MODELO_V1, cargar_metadatos, cargar_modelo
 from src.modelo import predecir as predecir_con_modelo
-from src.paths import DIR_DATA
+from src.paths import DIR_DATA, DIR_MODELOS
 from src.quality import assert_rango_fisico
 
 TZ_MADRID = "Europe/Madrid"
-NOMBRE_MODELO = "v1"
+
+# Emisión paralela (Fase 5bis, PR B): cada modelo declara aquí su pkl, su
+# JSON de metadatos y la lista de features con la que predice. v1 no cambia
+# de ruta -- son las mismas constantes con las que ya predecía
+# (RUTA_MODELO_V1/RUTA_METADATOS_V1 de src/modelo.py), citadas aquí de forma
+# explícita en vez de dejarlas implícitas en el default de `cargar_modelo`.
+# El orden del dict es el orden de los pasos del pliego (§3.1): v1 primero.
+MODELOS = {
+    "v1": {
+        "ruta_modelo": RUTA_MODELO_V1,
+        "ruta_metadatos": RUTA_METADATOS_V1,
+        "features": FEATURES_5F,
+    },
+    "v2": {
+        "ruta_modelo": DIR_MODELOS / "modelo_v2.pkl",
+        "ruta_metadatos": DIR_MODELOS / "modelo_v2.json",
+        "features": FEATURES_6F,
+    },
+}
 
 # Margen de descarga: no es "cuántos días hace falta para el lag" (el
 # lag_24 de las predicciones solo necesita el propio día ancla) sino
@@ -74,9 +100,11 @@ NOMBRE_MODELO = "v1"
 # arranca a las 22:00Z del día anterior al objetivo, y el `.normalize()` de
 # `inicio_descarga` (más abajo) recorta al comienzo del día -- 8 deja el
 # margen a cero y cualquier retraso de publicación de e·sios lo convierte en
-# un NaN; 9 deja un día de holgura. v1 (este PR) solo usa `lag_24`, así que
-# el margen extra no cambia ninguna predicción -- ver verificación de
-# paridad en el log del PR.
+# un NaN; 9 deja un día de holgura. v1 solo usa `lag_24`, así que el margen
+# extra no le cambia ninguna predicción -- verificado de nuevo en el PR B
+# (emisión paralela): paridad de v1 a tolerancia 0 con la ventana ya a 9
+# días, ver log del PR B. v2 (este PR) es quien empieza a usar el margen
+# entero, para `demanda_lag_168`.
 DIAS_VENTANA_DESCARGA = 9
 
 RUTA_PREDICCIONES = DIR_DATA / "predicciones.csv"
@@ -172,6 +200,55 @@ def construir_target_df(
     return df_target, dia_target_madrid
 
 
+def anadir_lag_168_prediccion(
+    df_target: pd.DataFrame, serie_referencia: pd.Series
+) -> pd.DataFrame:
+    """demanda_lag_168 para el camino de predicción de v2 -- mismo mecanismo
+    que `demanda_lag_24` en `construir_target_df`: búsqueda directa de
+    timestamp (T - 168h) contra `serie_referencia`, no `shift` posicional.
+    NO usa `src.features_v2.construir_features_6f`/`anadir_lag_168`: esas
+    funciones asumen la serie contigua y completa del camino de
+    entrenamiento (histórico horario sin huecos), y aquí no lo está más allá
+    del propio día ancla -- exactamente la misma razón por la que
+    `construir_target_df` ya evita `shift` para `demanda_lag_24` (ver su
+    docstring). Solo se llama para v2; v1 no la necesita."""
+    df_target = df_target.copy()
+    df_target["demanda_lag_168"] = serie_referencia.reindex(
+        (df_target["datetime_utc"] - pd.Timedelta(hours=168)).to_numpy()
+    ).to_numpy()
+
+    n_nan = int(df_target["demanda_lag_168"].isna().sum())
+    assert n_nan == 0, (
+        f"{n_nan} fila(s) a predecir sin demanda_lag_168 (invariante de "
+        "salida): no se emite ninguna predicción parcial de v2. Revisa el "
+        "margen de DIAS_VENTANA_DESCARGA frente a T-168h."
+    )
+
+    # Misma guarda que sobre demanda_lag_24: una entrada absurda no da
+    # error, da una predicción plausible y falsa.
+    assert_rango_fisico(
+        df_target.set_index("datetime_utc")["demanda_lag_168"],
+        "predecir.py: demanda_lag_168 (anadir_lag_168_prediccion)",
+    )
+
+    return df_target
+
+
+def ancla_ya_registrada(dia_ancla_madrid: pd.Timestamp) -> bool:
+    """True si `ancla_usada.csv` ya tiene una fila para este ancla
+    (`ancla_ultimo_dia_real`), sin importar qué modelo la disparó. El dato
+    de entrada del ancla (T-24h) no depende del modelo (decisión del 16/8):
+    con dos modelos leyendo la misma ventana en la misma corrida, sigue
+    siendo cierto -- pero ahora `main()` se invoca una vez por modelo
+    (pliego Fase5bis PR B, §3.1), así que hace falta esta comprobación para
+    que el ancla se escriba una sola vez por corrida, no una vez por modelo
+    (si los dos modelos la escribieran, se duplicaría -- pliego, §3.2 punto 2)."""
+    if not RUTA_ANCLA_USADA.exists():
+        return False
+    existentes = pd.read_csv(RUTA_ANCLA_USADA, dtype=str)
+    return bool((existentes["ancla_ultimo_dia_real"] == dia_ancla_madrid.date().isoformat()).any())
+
+
 def guardar_predicciones(filas_nuevas: pd.DataFrame) -> bool:
     """Append-only. Si `RUTA_PREDICCIONES` ya existe, no reescribe nada: si
     TODAS las filas nuevas ya estaban (misma clave horizonte+modelo), es un
@@ -253,7 +330,21 @@ def main() -> int:
             "Uso manual solamente -- NUNCA en el cron de Fase 3."
         ),
     )
+    parser.add_argument(
+        "--modelo",
+        choices=sorted(MODELOS),
+        required=True,
+        help=(
+            "Modelo con el que predecir (emisión paralela, Fase 5bis PR B). "
+            "Sin default deliberado: el cron invoca este script una vez por "
+            "modelo, en pasos y commits separados (pliego §3.1) -- un "
+            "default silencioso escondería si algún paso se lanzó sin "
+            "--modelo."
+        ),
+    )
     args = parser.parse_args()
+    modelo = args.modelo
+    config_modelo = MODELOS[modelo]
 
     ahora_utc = pd.Timestamp.now(tz="UTC")
     inicio_descarga = (ahora_utc - pd.Timedelta(days=DIAS_VENTANA_DESCARGA)).normalize()
@@ -285,8 +376,29 @@ def main() -> int:
 
     df_target, dia_target_madrid = construir_target_df(dia_ancla, serie_referencia)
 
-    modelo = cargar_modelo()
-    predicciones = predecir_con_modelo(modelo, df_target[FEATURES_5F])
+    if modelo == "v2":
+        # Única diferencia de v2 en el camino de predicción: una columna más
+        # (demanda_lag_168), resuelta por el mismo mecanismo de búsqueda que
+        # demanda_lag_24 -- ver docstring de anadir_lag_168_prediccion.
+        df_target = anadir_lag_168_prediccion(df_target, serie_referencia)
+
+    # Candado nº 2 (pliego Fase5bis PR B, §3.3): la lista de features con la
+    # que se predice tiene que ser IDÉNTICA (mismo nombre, mismo orden) a la
+    # declarada en el JSON de metadatos propio del modelo. El pipeline no
+    # puede inventar, añadir ni reordenar features -- si el JSON y
+    # `config_modelo["features"]` alguna vez divergen, esto para en rojo
+    # antes de predecir nada, no después.
+    metadatos_modelo = cargar_metadatos(config_modelo["ruta_metadatos"])
+    features_modelo = config_modelo["features"]
+    assert list(features_modelo) == metadatos_modelo["features"], (
+        f"Candado nº 2: las features declaradas en "
+        f"{config_modelo['ruta_metadatos'].name} "
+        f"({metadatos_modelo['features']}) no coinciden con las que "
+        f"predecir.py usa para {modelo} ({list(features_modelo)})."
+    )
+
+    modelo_cargado = cargar_modelo(ruta=config_modelo["ruta_modelo"])
+    predicciones = predecir_con_modelo(modelo_cargado, df_target[features_modelo])
 
     # Hoy casi no puede saltar (un árbol solo devuelve medias de sus hojas):
     # su valor es de Fase 5, cuando el challenger se re-entrena con datos
@@ -304,18 +416,22 @@ def main() -> int:
             "horizonte": df_target["datetime_utc"].dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
             "valor_predicho": predicciones,
             "ancla_ultimo_dia_real": dia_ancla.date().isoformat(),
-            "modelo": NOMBRE_MODELO,
+            "modelo": modelo,
         }
     )[COLUMNAS_PREDICCIONES]
 
     escrito = guardar_predicciones(filas_nuevas)
-    if escrito:
+    # ancla_usada.csv no depende del modelo (§3.2 punto 2): se escribe una
+    # sola vez por corrida aunque este script se invoque una vez por modelo
+    # -- ver docstring de ancla_ya_registrada. Sin esta segunda comprobación,
+    # la corrida del segundo modelo del día duplicaría las filas del ancla.
+    if escrito and not ancla_ya_registrada(dia_ancla):
         ancla_usada = construir_ancla_usada(df_target, df_horario, dia_ancla, fecha_emision)
         guardar_ancla_usada(ancla_usada)
 
     print(
         f"Predicción emitida para {dia_target_madrid.date()} (Madrid, "
-        f"{len(filas_nuevas)} horas, modelo {NOMBRE_MODELO}) -- ancla: "
+        f"{len(filas_nuevas)} horas, modelo {modelo}) -- ancla: "
         f"{dia_ancla.date()}."
     )
     return 0
