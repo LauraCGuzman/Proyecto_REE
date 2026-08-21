@@ -242,11 +242,13 @@ def test_siete_dias_consecutivos_escribe_mae():
     assert ventana_7d["sesgo_medio"] == 500.0
 
 
-def test_referencia_v1_y_v2_no_comparables():
-    """Fase 5bis PR B (emisión paralela): el bloque `referencia` cambia de
-    forma según el modelo -- v1 sigue con `mae_test_notebook` (sin tocar);
-    v2 usa `mae_val_notebook` y lleva una `nota` explícita de que no es de
-    test. Los dos modelos activos deben tener referencia declarada."""
+def test_referencia_v1_sola_tiene_mae_de_notebook():
+    """Fase 5bis PR B (emisión paralela), revisión de Laura 21/8: el bloque
+    `referencia` de v2 NO lleva ningún mae/sesgo de notebook -- el único
+    número posible (`modelos/modelo_v2.json`) es de un árbol de comparación
+    distinto al serializado, no del modelo que predice en producción. v1
+    sigue con `mae_test_notebook` sin tocar. Los dos modelos activos deben
+    tener bloque `referencia`, pero solo v1 con cifra propia."""
     ahora_utc = pd.Timestamp("2026-08-20T05:31:00Z")
     errores_vacio = pd.DataFrame(columns=COLUMNAS_ERRORES)
 
@@ -255,14 +257,16 @@ def test_referencia_v1_y_v2_no_comparables():
     metricas_v1 = calcular_metricas(errores_vacio, NOMBRE_MODELO, ahora_utc)
     ref_v1 = metricas_v1["referencia"]
     assert "mae_test_notebook" in ref_v1
-    assert "mae_val_notebook" not in ref_v1
     assert "nota" not in ref_v1
 
     metricas_v2 = calcular_metricas(errores_vacio, NOMBRE_MODELO_V2, ahora_utc)
     ref_v2 = metricas_v2["referencia"]
-    assert "mae_val_notebook" in ref_v2
     assert "mae_test_notebook" not in ref_v2
-    assert "nota" in ref_v2 and "test" in ref_v2["nota"].lower()
+    assert "mae_val_notebook" not in ref_v2, (
+        "v2 no debe llevar ningún mae/sesgo de notebook: el único número "
+        "disponible no es del modelo serializado (ver modelos/modelo_v2.json)"
+    )
+    assert "nota" in ref_v2 and "serializado" in ref_v2["nota"].lower()
 
     # La referencia de persistencia sí es compartida (no depende del modelo).
     assert ref_v1["mae_baseline_persistencia"] == ref_v2["mae_baseline_persistencia"]
@@ -298,9 +302,12 @@ def test_v2_aparece_con_guion_el_dia_uno():
 
 def test_construir_estado_pipeline_md_dos_bloques():
     """`estado_pipeline.md` con los dos modelos, cada uno en su propio
-    bloque (pliego §3.6): sin mezclar sus números, y sin que el bloque de
-    v2 arrastre la prosa de "techo de extrapolación" verificada solo para
-    v1 (pliego, comprobación de esta sesión)."""
+    bloque (pliego §3.6): sin mezclar sus números, sin que el bloque de v2
+    arrastre la prosa de "techo de extrapolación" verificada solo para v1, y
+    -- revisión de Laura, PR B 21/8 -- sin ninguna columna ni cifra de
+    referencia de notebook en el bloque de v2 (el único número disponible
+    no es del modelo serializado, no se muestra ni con nota al pie: una
+    columna se lee sin leer la nota)."""
     ahora_utc = pd.Timestamp("2026-08-20T05:31:00Z")
     errores_vacio = pd.DataFrame(columns=COLUMNAS_ERRORES)
 
@@ -318,12 +325,21 @@ def test_construir_estado_pipeline_md_dos_bloques():
         "v1 va primero, mismo orden que los pasos del pliego"
     )
     assert "38.861,1 MW" in md, "la prosa de v1 (techo de extrapolación) debe seguir presente"
-    # La prosa de "techo de extrapolación"/"arranque de la semana" es
-    # observación medida de v1: no debe aparecer también bajo el bloque de
-    # v2 sin haberse medido para v2.
+    assert "MAE test notebook (MW)" in md, "v1 debe conservar su columna de referencia"
+
+    bloque_v1 = md[md.index("## Modelo: v1") : md.index("## Modelo: v2")]
     bloque_v2 = md[md.index("## Modelo: v2"):]
+
+    # La prosa de "techo de extrapolación"/"arranque de la semana" es
+    # observación medida de v1: no debe aparecer también bajo el bloque de v2.
     assert "38.861,1 MW" not in bloque_v2
-    assert "no comparable" in bloque_v2.lower() or "no es comparable" in bloque_v2.lower()
+    assert "1263.02" in bloque_v1
+
+    # Sin columna ni cifra de referencia de notebook en el bloque de v2 --
+    # ni "MAE test notebook", ni "MAE val notebook", ni el número 997.25.
+    assert "notebook (MW)" not in bloque_v2
+    assert "997.25" not in bloque_v2
+    assert "serializado" in bloque_v2.lower()
 
 
 def main() -> int:
@@ -339,8 +355,8 @@ def main() -> int:
     print("✔ test_muestra_insuficiente")
     test_siete_dias_consecutivos_escribe_mae()
     print("✔ test_siete_dias_consecutivos_escribe_mae")
-    test_referencia_v1_y_v2_no_comparables()
-    print("✔ test_referencia_v1_y_v2_no_comparables")
+    test_referencia_v1_sola_tiene_mae_de_notebook()
+    print("✔ test_referencia_v1_sola_tiene_mae_de_notebook")
     test_v2_aparece_con_guion_el_dia_uno()
     print("✔ test_v2_aparece_con_guion_el_dia_uno")
     test_construir_estado_pipeline_md_dos_bloques()

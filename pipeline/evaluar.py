@@ -109,25 +109,28 @@ MAE_TEST_NOTEBOOK_MW = 1263.02
 SESGO_TEST_NOTEBOOK_MW = 755.15
 MAE_BASELINE_PERSISTENCIA_MW = 1843
 
-# Referencia de v2 (Fase 5bis, PR A) -- mismo criterio de "verdad congelada,
-# no leída en caliente" que la de v1, pero de otra naturaleza: PR A no lee
-# el conjunto de test (pliego Fase5bis, Parte 2), así que no existe un MAE
-# de test para v2 con el que rellenar los campos de arriba. Estos dos salen
-# de `modelos/modelo_v2.json` (`mae_val`/`sesgo_val`, validación 2025) --
-# ver la nota que va con ellos en `_referencia_de_modelo`, no comparables
-# con los de v1 (test).
-MAE_VAL_NOTEBOOK_V2_MW = 997.25
-SESGO_VAL_NOTEBOOK_V2_MW = 124.50
+# v2 (Fase 5bis, PR A) NO tiene una referencia de notebook propia del
+# modelo serializado -- y no es solo que no sea comparable con la de v1
+# (test), es que no es DE ESTE modelo (revisión de Laura, PR B, 21/8):
+# `modelo_v2.pkl` se entrena con `train_clean_6f` completo (2023-2025,
+# 26.136 filas, ver `modelos/modelo_v2.json`), así que su propia validación
+# (2025) forma parte de su entrenamiento y no tiene una medida en validación
+# posible. El `mae_val`/`sesgo_val` que sí existe en `modelos/modelo_v2.json`
+# es de un árbol de COMPARACIÓN distinto (entrenado solo con 2023-2024, para
+# medir el efecto de `demanda_lag_168` con val como conjunto de decisión) --
+# ese número tiene su sitio propio, con su nota, en `modelos/modelo_v2.json`
+# (PR A); no se repite aquí. Ver la nota de `_referencia_de_modelo` abajo.
 
 
 def _referencia_de_modelo(modelo: str) -> dict:
     """Bloque `referencia` de `calcular_metricas`, por modelo -- antes era
-    fijo (siempre las constantes de v1); con dos modelos cada uno declara la
-    suya, y v2 no tiene test (ver comentario de
-    `MAE_VAL_NOTEBOOK_V2_MW` arriba), así que su bloque no se llama
-    `mae_test_notebook` como el de v1: llamarlo igual sería presentar un
-    número de validación como si fuera de test, la misma fuga de encuadre
-    que este proyecto ya evita en el README ("no son comparables")."""
+    fijo (siempre las constantes de v1). v1 conserva su `mae_test_notebook`
+    de siempre (modelo serializado y número medido son el mismo objeto). v2
+    no lleva ningún MAE/sesgo de notebook aquí -- ver comentario de arriba:
+    no es que no sea comparable con la de v1, es que la única cifra
+    disponible (`modelos/modelo_v2.json`) no es del modelo serializado. Una
+    columna en una tabla se lee sin leer la nota de debajo; el hueco (sin
+    columna) es la forma honesta de no invitar a esa comparación."""
     if modelo == NOMBRE_MODELO:
         return {
             "mae_test_notebook": MAE_TEST_NOTEBOOK_MW,
@@ -136,14 +139,15 @@ def _referencia_de_modelo(modelo: str) -> dict:
         }
     if modelo == NOMBRE_MODELO_V2:
         return {
-            "mae_val_notebook": MAE_VAL_NOTEBOOK_V2_MW,
-            "sesgo_val_notebook": SESGO_VAL_NOTEBOOK_V2_MW,
             "mae_baseline_persistencia": MAE_BASELINE_PERSISTENCIA_MW,
             "nota": (
-                "v2 no tiene MAE de test en este pliego (PR A de Fase5bis no "
-                "lee el conjunto de test): esta referencia es de VALIDACION "
-                "2025 (modelos/modelo_v2.json), no comparable con la "
-                "mae_test_notebook de v1."
+                "v2 no tiene una referencia de notebook para el modelo "
+                "SERIALIZADO (entrena con validación incluida, 2023-2025 "
+                "completo): no hay una medida en validación posible para "
+                "ese modelo. El mae_val/sesgo_val de modelos/modelo_v2.json "
+                "es de un árbol de comparación distinto, entrenado solo con "
+                "2023-2024 -- se queda documentado ahí, con su propia nota, "
+                "y no se repite aquí para no sugerir que es del serializado."
             ),
         }
     raise ValueError(f"Sin referencia declarada para el modelo {modelo!r}.")
@@ -383,28 +387,37 @@ def _bloque_md_modelo(metricas: dict, n_dias_serie: int) -> list[str]:
     mezclaría los históricos de v1 y v2 en un solo número -- justo la
     agregación entre modelos que el pliego del PR B prohíbe (§3.5).
 
-    Referencia de la tabla (columna final): el campo de `metricas
-    ["referencia"]` cambia de nombre según el modelo (`mae_test_notebook`
-    para v1, `mae_val_notebook` para v2 -- ver `_referencia_de_modelo`), así
-    que aquí se toma genérico y se etiqueta con la palabra correspondiente
-    para no dar a entender que los dos son el mismo tipo de número."""
+    Referencia de la tabla (columna final): SOLO se añade si
+    `metricas["referencia"]` trae un número de notebook propio del modelo
+    serializado (`mae_test_notebook`, hoy solo v1). No se añade una columna
+    "aproximada" con nota al pie explicando que no vale: una columna en una
+    tabla se lee sin leer la nota de debajo, y esa cifra terminaría
+    comparada con la de v1 tarde o temprano (revisión de Laura, PR B,
+    21/8) -- v2 no tiene esa referencia hoy (ver `_referencia_de_modelo`),
+    así que su tabla sale sin columna final, no con una engañosa."""
     referencia = metricas["referencia"]
-    if "mae_test_notebook" in referencia:
-        ref_valor = referencia["mae_test_notebook"]
-        ref_etiqueta = "MAE test notebook (MW)"
-    else:
-        ref_valor = referencia["mae_val_notebook"]
-        ref_etiqueta = "MAE val notebook (MW)"
+    tiene_referencia_propia = "mae_test_notebook" in referencia
 
     filas_tabla = []
     for ventana, valores in metricas["publicado"]["ventanas"].items():
-        filas_tabla.append(
+        fila = (
             f"| {ventana} | {_formatear_mae(valores['mae'])} | "
             f"{_formatear_sesgo(valores['sesgo_medio'])} | {valores['n_horas']} | "
-            f"{valores['dias_cubiertos']} | {valores['cobertura_dias']} | "
-            f"{ref_valor:.2f} |"
+            f"{valores['dias_cubiertos']} | {valores['cobertura_dias']} |"
         )
+        if tiene_referencia_propia:
+            fila += f" {referencia['mae_test_notebook']:.2f} |"
+        filas_tabla.append(fila)
     tabla = "\n".join(filas_tabla)
+
+    cabecera = (
+        "| Ventana | MAE (MW) | Sesgo medio (MW) | n horas | "
+        "Fechas cubiertas (gobierna) | Span (días) |"
+    )
+    separador = "|---|---|---|---|---|---|"
+    if tiene_referencia_propia:
+        cabecera += " MAE test notebook (MW) |"
+        separador += "---|"
 
     lineas = [
         f"## Modelo: {metricas['modelo']}",
@@ -425,9 +438,8 @@ def _bloque_md_modelo(metricas: dict, n_dias_serie: int) -> list[str]:
         "huecos entre ellas (fechas dispersas en el tiempo estiran el span sin "
         "sumar fechas cubiertas).",
         "",
-        f"| Ventana | MAE (MW) | Sesgo medio (MW) | n horas | "
-        f"Fechas cubiertas (gobierna) | Span (días) | {ref_etiqueta} |",
-        "|---|---|---|---|---|---|---|",
+        cabecera,
+        separador,
         tabla,
         "",
     ]
@@ -442,15 +454,16 @@ def _bloque_md_modelo(metricas: dict, n_dias_serie: int) -> list[str]:
             "",
         ]
 
-    if "mae_test_notebook" in referencia:
+    if tiene_referencia_propia:
         lineas += [
             "### Por qué el MAE de producción no coincide con el del notebook",
             "",
             "El MAE de producción de la tabla de arriba no es directamente "
-            f"comparable al {ref_valor:.2f} MW medido en el conjunto de test "
-            "del notebook (`notebooks/modelo_demanda.ipynb`, celda 28). Dos "
-            "limitaciones conocidas y diagnosticadas del modelo -- no fallos "
-            "del pipeline -- explican buena parte de la diferencia:",
+            f"comparable al {referencia['mae_test_notebook']:.2f} MW medido en "
+            "el conjunto de test del notebook "
+            "(`notebooks/modelo_demanda.ipynb`, celda 28). Dos limitaciones "
+            "conocidas y diagnosticadas del modelo -- no fallos del pipeline "
+            "-- explican buena parte de la diferencia:",
             "",
             "- **Arranque de la semana.** El modelo condiciona el nivel de la "
             "predicción en `tipo_efectivo(D)` y en `demanda_lag_24`, pero nunca "
@@ -469,18 +482,20 @@ def _bloque_md_modelo(metricas: dict, n_dias_serie: int) -> list[str]:
             "",
         ]
     else:
-        nota = referencia.get("nota", "")
         lineas += [
-            "### Por qué esta referencia no es comparable con la de v1",
+            "### Referencia de notebook",
             "",
-            f"El {ref_valor:.2f} MW de la columna de referencia es un MAE de "
-            "VALIDACIÓN, no de test. " + nota,
+            "Este modelo no tiene todavía una referencia de notebook para el "
+            "propio artefacto serializado -- sin columna en la tabla de "
+            "arriba a propósito, para no invitar a compararla con la de v1. "
+            + referencia.get("nota", ""),
             "",
-            "No hay una sección de \"limitaciones diagnosticadas\" propia de v2 "
-            "todavía: las de v1 (arranque de la semana, techo de extrapolación) "
-            "son observaciones medidas sobre el árbol de v1, no se asumen "
-            "iguales para v2 sin medirlas -- queda para cuando la ventana de "
-            "seis semanas (pliego Fase5bis, 0.1) dé señal suficiente.",
+            "No hay tampoco una sección de \"limitaciones diagnosticadas\" "
+            "propia de este modelo todavía: las de v1 (arranque de la semana, "
+            "techo de extrapolación) son observaciones medidas sobre su "
+            "árbol, no se asumen iguales aquí sin medirlas -- queda para "
+            "cuando la ventana de seis semanas (pliego Fase5bis, 0.1) dé "
+            "señal suficiente.",
             "",
         ]
 
