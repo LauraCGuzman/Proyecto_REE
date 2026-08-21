@@ -2,9 +2,9 @@
 
 # Estado del pipeline REE
 
-Última corrida: 2026-08-20T05:48:57Z
+Última corrida: 2026-08-21T05:50:35Z
 Modelo: v1
-Fechas presentes en `data/errores.csv` (publicadas + diagnóstico): 8
+Fechas presentes en `data/errores.csv` (publicadas + diagnóstico): 9
 
 ## Métrica publicada (`h_adelanto_h > 0`)
 
@@ -12,11 +12,9 @@ Fechas presentes en `data/errores.csv` (publicadas + diagnóstico): 8
 
 | Ventana | MAE (MW) | Sesgo medio (MW) | n horas | Fechas cubiertas (gobierna) | Span (días) | MAE test notebook (MW) |
 |---|---|---|---|---|---|---|
-| 7d | — | — | 95 | 6 | 5.6 | 1263.02 |
-| 30d | — | — | 95 | 6 | 5.6 | 1263.02 |
-| 90d | — | — | 95 | 6 | 5.6 | 1263.02 |
-
-> **Muestra insuficiente todavía.** Ninguna ventana alcanza las 7 fechas de calendario distintas con al menos una hora publicada que exige la cobertura mínima -- el MAE se muestra como `—` (`null` en `data/metricas.json`) porque lo que no se puede afirmar todavía no se escribe.
+| 7d | 2028.35 | +1247.71 | 111 | 7 | 6.6 | 1263.02 |
+| 30d | 2028.35 | +1247.71 | 111 | 7 | 6.6 | 1263.02 |
+| 90d | 2028.35 | +1247.71 | 111 | 7 | 6.6 | 1263.02 |
 
 ## Por qué el MAE de producción no coincide con el del notebook
 
