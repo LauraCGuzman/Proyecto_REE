@@ -1,62 +1,125 @@
 {
-  "actualizado_utc": "2026-08-21T05:50:35Z",
-  "modelo": "v1",
-  "muestra_insuficiente": false,
-  "publicado": {
-    "criterio": "h_adelanto_h > 0",
-    "ventanas": {
-      "7d": {
-        "mae": 2028.35,
-        "sesgo_medio": 1247.71,
-        "n_horas": 111,
-        "cobertura_dias": 6.6,
-        "dias_cubiertos": 7
-      },
-      "30d": {
-        "mae": 2028.35,
-        "sesgo_medio": 1247.71,
-        "n_horas": 111,
-        "cobertura_dias": 6.6,
-        "dias_cubiertos": 7
-      },
-      "90d": {
-        "mae": 2028.35,
-        "sesgo_medio": 1247.71,
-        "n_horas": 111,
-        "cobertura_dias": 6.6,
-        "dias_cubiertos": 7
+  "v1": {
+    "actualizado_utc": "2026-08-22T05:46:12Z",
+    "modelo": "v1",
+    "muestra_insuficiente": false,
+    "publicado": {
+      "criterio": "h_adelanto_h > 0",
+      "ventanas": {
+        "7d": {
+          "mae": 2135.73,
+          "sesgo_medio": 1082.81,
+          "n_horas": 112,
+          "cobertura_dias": 6.6,
+          "dias_cubiertos": 7
+        },
+        "30d": {
+          "mae": 2000.62,
+          "sesgo_medio": 898.76,
+          "n_horas": 127,
+          "cobertura_dias": 7.6,
+          "dias_cubiertos": 8
+        },
+        "90d": {
+          "mae": 2000.62,
+          "sesgo_medio": 898.76,
+          "n_horas": 127,
+          "cobertura_dias": 7.6,
+          "dias_cubiertos": 8
+        }
       }
+    },
+    "diagnostico": {
+      "criterio": "h_adelanto_h <= 0",
+      "ventanas": {
+        "7d": {
+          "mae": 1013.77,
+          "sesgo_medio": -35.02,
+          "n_horas": 55,
+          "cobertura_dias": 6.2,
+          "dias_cubiertos": 8
+        },
+        "30d": {
+          "mae": 872.08,
+          "sesgo_medio": 64.49,
+          "n_horas": 72,
+          "cobertura_dias": 8.2,
+          "dias_cubiertos": 10
+        },
+        "90d": {
+          "mae": 872.08,
+          "sesgo_medio": 64.49,
+          "n_horas": 72,
+          "cobertura_dias": 8.2,
+          "dias_cubiertos": 10
+        }
+      }
+    },
+    "referencia": {
+      "mae_test_notebook": 1263.02,
+      "sesgo_test_notebook": 755.15,
+      "mae_baseline_persistencia": 1843
     }
   },
-  "diagnostico": {
-    "criterio": "h_adelanto_h <= 0",
-    "ventanas": {
-      "7d": {
-        "mae": 1003.66,
-        "sesgo_medio": 51.38,
-        "n_horas": 56,
-        "cobertura_dias": 6.9,
-        "dias_cubiertos": 8
-      },
-      "30d": {
-        "mae": 910.76,
-        "sesgo_medio": 77.51,
-        "n_horas": 64,
-        "cobertura_dias": 7.2,
-        "dias_cubiertos": 9
-      },
-      "90d": {
-        "mae": 910.76,
-        "sesgo_medio": 77.51,
-        "n_horas": 64,
-        "cobertura_dias": 7.2,
-        "dias_cubiertos": 9
+  "v2": {
+    "actualizado_utc": "2026-08-22T05:46:12Z",
+    "modelo": "v2",
+    "muestra_insuficiente": true,
+    "publicado": {
+      "criterio": "h_adelanto_h > 0",
+      "ventanas": {
+        "7d": {
+          "mae": null,
+          "sesgo_medio": null,
+          "n_horas": 0,
+          "cobertura_dias": 0.0,
+          "dias_cubiertos": 0
+        },
+        "30d": {
+          "mae": null,
+          "sesgo_medio": null,
+          "n_horas": 0,
+          "cobertura_dias": 0.0,
+          "dias_cubiertos": 0
+        },
+        "90d": {
+          "mae": null,
+          "sesgo_medio": null,
+          "n_horas": 0,
+          "cobertura_dias": 0.0,
+          "dias_cubiertos": 0
+        }
       }
+    },
+    "diagnostico": {
+      "criterio": "h_adelanto_h <= 0",
+      "ventanas": {
+        "7d": {
+          "mae": null,
+          "sesgo_medio": null,
+          "n_horas": 7,
+          "cobertura_dias": 0.2,
+          "dias_cubiertos": 2
+        },
+        "30d": {
+          "mae": null,
+          "sesgo_medio": null,
+          "n_horas": 7,
+          "cobertura_dias": 0.2,
+          "dias_cubiertos": 2
+        },
+        "90d": {
+          "mae": null,
+          "sesgo_medio": null,
+          "n_horas": 7,
+          "cobertura_dias": 0.2,
+          "dias_cubiertos": 2
+        }
+      }
+    },
+    "referencia": {
+      "mae_baseline_persistencia": 1843,
+      "nota": "v2 no tiene una referencia de notebook para el modelo SERIALIZADO (entrena con validación incluida, 2023-2025 completo): no hay una medida en validación posible para ese modelo. El mae_val/sesgo_val de modelos/modelo_v2.json es de un árbol de comparación distinto, entrenado solo con 2023-2024 -- se queda documentado ahí, con su propia nota, y no se repite aquí para no sugerir que es del serializado."
     }
-  },
-  "referencia": {
-    "mae_test_notebook": 1263.02,
-    "sesgo_test_notebook": 755.15,
-    "mae_baseline_persistencia": 1843
   }
 }
