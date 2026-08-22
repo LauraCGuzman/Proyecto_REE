@@ -1,0 +1,13 @@
+# Dependencias del panel de Streamlit (Fase 6, pliego `PLIEGO_Fase6_streamlit.md`
+# §2.7). Deliberadamente separado de `requirements.txt` (raíz): el panel no
+# carga el modelo, solo lee CSV y JSON -- SIN scikit-learn ni joblib.
+# Curado a mano, no `pip freeze`: fijado a lo instalado y verificado en el
+# venv del proyecto el 22/8/2026. pandas/numpy/pyarrow/holidays a la misma
+# versión que `requirements.txt` (raíz) porque `app/panel.py` importa
+# `scripts/grafico_deriva.py` y `src/features.py`, que las requieren.
+streamlit==1.62.0
+pandas==3.0.3
+numpy==2.5.0
+pyarrow==24.0.0
+holidays==0.100
+matplotlib==3.11.0
