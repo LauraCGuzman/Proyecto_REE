@@ -225,8 +225,19 @@ def construir_grafico(serie: pd.DataFrame, dias_marcados: set, texto_v2: str):
         ),
     )
     ax_mae.set_ylabel("MAE diario (MW)")
-    ax_mae.legend(loc="upper left", fontsize=8)
-    ax_mae.set_title("Deriva del error diario -- v1 (solo horas publicadas)")
+    # Fuera de los ejes (pliego Fase6 §1.1): dentro de la caja de datos, en
+    # cualquier esquina, la leyenda tapa parte de la serie o del pico del
+    # máximo -- la caja se ancla por encima del panel, en el hueco entre el
+    # título y los datos, donde no hay ninguna serie que cubrir.
+    ax_mae.legend(
+        loc="lower center",
+        bbox_to_anchor=(0.5, 1.02),
+        fontsize=8,
+        frameon=False,
+    )
+    ax_mae.set_title(
+        "Deriva del error diario -- v1 (solo horas publicadas)", pad=28
+    )
 
     ax_sesgo.plot(x, serie["sesgo"], marker="o", color="tab:red")
     ax_sesgo.axhline(0, color="black", linewidth=1)
@@ -239,18 +250,30 @@ def construir_grafico(serie: pd.DataFrame, dias_marcados: set, texto_v2: str):
         if pd.isna(fila["n"]):
             continue
         if n_moda is not None and fila["n"] != n_moda:
+            # Ancla explícita al punto (pliego Fase6 §1.2): un desplazamiento
+            # en puntos de pantalla, sin más, se lee en unidades de datos muy
+            # distintas según el rango del eje -- en este eje (cientos a
+            # miles de MW) un offset "pequeño" en pantalla puede aterrizar
+            # la etiqueta junto a la línea de referencia del notebook en vez
+            # de junto al punto. La flecha corta quita la ambigüedad
+            # independientemente de la escala.
             ax_mae.annotate(
                 f"n={int(fila['n'])}",
                 (pd.Timestamp(fila["fecha"]), fila["mae"]),
                 textcoords="offset points",
-                xytext=(0, 8),
+                xytext=(18, -14),
                 fontsize=7,
-                ha="center",
+                ha="left",
+                va="top",
+                arrowprops=dict(arrowstyle="-", color="dimgray", lw=0.6),
             )
 
     fig.autofmt_xdate()
     fig.text(0.01, 0.01, texto_v2, fontsize=8, color="dimgray")
-    fig.tight_layout(rect=(0, 0.04, 1, 1))
+    # Techo del rect recortado a 0.90 (antes 1): dejar hueco para el título
+    # y, encima de él, la leyenda anclada fuera de los ejes (§1.1) -- si no,
+    # tight_layout la comprime contra el título o la corta al guardar.
+    fig.tight_layout(rect=(0, 0.04, 1, 0.90))
     return fig
 
 
