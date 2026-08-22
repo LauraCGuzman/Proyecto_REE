@@ -25,9 +25,10 @@ for _stream in (sys.stdout, sys.stderr):
 from panel.panel import (
     V1,
     V2,
+    construir_grafico_curva,
+    construir_grafico_deriva,
     dia_con_mayor_mae,
     extraer_fechas_presentes,
-    extraer_seccion_notebook,
     horas_publicadas,
     techo_modelo,
     texto_v2_seguro,
@@ -107,30 +108,55 @@ def test_techo_modelo_none_si_falta_o_vacio():
     assert techo_modelo(predicciones, "v1") is None
 
 
-def test_extraer_seccion_notebook_v1_presente_v2_ausente():
-    """v1 tiene la sección "Por qué el MAE..."; v2 (sin referencia de
-    notebook propia) tiene un encabezado distinto ("Referencia de
-    notebook") -- extraer_seccion_notebook debe devolver None para v2, no
-    inventar ni recortar mal."""
-    estado_md = (
-        "## Modelo: v1\n\n"
-        "### Por qué el MAE de producción no coincide con el del notebook\n\n"
-        "Texto de v1.\n\n"
-        "---\n\n"
-        "## Modelo: v2\n\n"
-        "### Referencia de notebook\n\n"
-        "Texto de v2, sin sección de notebook.\n"
+def test_construir_grafico_curva_dos_series_y_techo():
+    """Pliego (PR gráficos interactivos): un modelo, dos líneas (real y
+    predicho), el techo como línea horizontal aparte -- nunca una tercera
+    serie de datos."""
+    dia_df = pd.DataFrame(
+        {
+            "horizonte_madrid": pd.to_datetime(
+                ["2026-08-17 10:00", "2026-08-17 11:00"]
+            ).tz_localize("Europe/Madrid"),
+            "valor_real": [30_000.0, 31_000.0],
+            "valor_predicho": [29_500.0, 30_400.0],
+            "fecha": [pd.Timestamp("2026-08-17").date()] * 2,
+        }
     )
-    seccion_v1 = extraer_seccion_notebook(estado_md, V1)
-    assert seccion_v1 is not None
-    assert "Texto de v1." in seccion_v1
-    assert "Texto de v2" not in seccion_v1  # no se cuela el bloque de v2
-
-    assert extraer_seccion_notebook(estado_md, V2) is None
+    fig = construir_grafico_curva(dia_df, "v1", techo=38_861.1)
+    nombres = [t.name for t in fig.data]
+    assert nombres == ["Real", "Predicho"]  # exactamente dos series, en ese orden
+    assert len(fig.layout.shapes) == 1  # la línea del techo, no una tercera serie
 
 
-def test_extraer_seccion_notebook_modelo_ausente():
-    assert extraer_seccion_notebook("## Modelo: v1\n\ncontenido", "v2") is None
+def test_construir_grafico_curva_sin_techo_no_dibuja_linea():
+    dia_df = pd.DataFrame(
+        {
+            "horizonte_madrid": pd.to_datetime(["2026-08-17 10:00"]).tz_localize("Europe/Madrid"),
+            "valor_real": [30_000.0],
+            "valor_predicho": [29_500.0],
+            "fecha": [pd.Timestamp("2026-08-17").date()],
+        }
+    )
+    fig = construir_grafico_curva(dia_df, "v1", techo=None)
+    assert not fig.layout.shapes
+
+
+def test_construir_grafico_deriva_dos_paneles():
+    """Dos series (MAE, sesgo) repartidas en dos filas de subplots -- el
+    mismo dato que ya calcula scripts/grafico_deriva.py, dibujado aparte."""
+    serie = pd.DataFrame(
+        {
+            "fecha": [pd.Timestamp("2026-08-16").date(), pd.Timestamp("2026-08-17").date()],
+            "n": [16, 16],
+            "mae": [2000.0, 5650.0],
+            "sesgo": [500.0, -300.0],
+        }
+    )
+    import datetime
+
+    fig = construir_grafico_deriva(serie, dias_marcados={datetime.date(2026, 8, 17)})
+    nombres = [t.name for t in fig.data]
+    assert nombres == ["MAE diario", "Sesgo diario"]
 
 
 def test_extraer_fechas_presentes():
@@ -174,10 +200,12 @@ def main() -> int:
     print("✔ test_techo_modelo_calculado_en_vivo_por_modelo")
     test_techo_modelo_none_si_falta_o_vacio()
     print("✔ test_techo_modelo_none_si_falta_o_vacio")
-    test_extraer_seccion_notebook_v1_presente_v2_ausente()
-    print("✔ test_extraer_seccion_notebook_v1_presente_v2_ausente")
-    test_extraer_seccion_notebook_modelo_ausente()
-    print("✔ test_extraer_seccion_notebook_modelo_ausente")
+    test_construir_grafico_curva_dos_series_y_techo()
+    print("✔ test_construir_grafico_curva_dos_series_y_techo")
+    test_construir_grafico_curva_sin_techo_no_dibuja_linea()
+    print("✔ test_construir_grafico_curva_sin_techo_no_dibuja_linea")
+    test_construir_grafico_deriva_dos_paneles()
+    print("✔ test_construir_grafico_deriva_dos_paneles")
     test_extraer_fechas_presentes()
     print("✔ test_extraer_fechas_presentes")
     test_texto_v2_seguro_sin_bloque_v2()

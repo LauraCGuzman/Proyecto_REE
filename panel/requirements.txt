@@ -2,12 +2,16 @@
 # §2.7). Deliberadamente separado de `requirements.txt` (raíz): el panel no
 # carga el modelo, solo lee CSV y JSON -- SIN scikit-learn ni joblib.
 # Curado a mano, no `pip freeze`: fijado a lo instalado y verificado en el
-# venv del proyecto el 22/8/2026. pandas/numpy/pyarrow/holidays a la misma
-# versión que `requirements.txt` (raíz) porque `app/panel.py` importa
+# venv del proyecto. pandas/numpy/pyarrow/holidays a la misma versión que
+# `requirements.txt` (raíz) porque `panel/panel.py` importa
 # `scripts/grafico_deriva.py` y `src/features.py`, que las requieren.
+# matplotlib sigue haciendo falta de forma transitiva: `grafico_deriva.py`
+# lo importa a nivel de módulo para su propio PNG (Fase 4), aunque el panel
+# ya no dibuja con él (PR `fase6-graficos-interactivos`, plotly en su lugar).
 streamlit==1.62.0
 pandas==3.0.3
 numpy==2.5.0
 pyarrow==24.0.0
 holidays==0.100
 matplotlib==3.11.0
+plotly==6.8.0

@@ -1,10 +1,13 @@
 """Panel de monitorización del pipeline REE en producción (Fase 6, pliego
-`PLIEGO_Fase6_streamlit.md`, PR 2).
+`PLIEGO_Fase6_streamlit.md`, PR 2; gráficos interactivos, PR
+`fase6-graficos-interactivos`).
 
 Lector objetivo: no conoce el proyecto. En treinta segundos debe entender
 qué se predice, cómo va y qué falla. No es un cuadro de mando de negocio:
 es la prueba de que el modelo está vivo, medido y con sus límites
-conocidos.
+conocidos. Por eso el texto es corto y sin jerga interna: sin nombres de
+notebook, de celda ni de ruta de fichero -- eso es detalle de
+implementación, no algo que el lector objetivo necesite.
 
 Panel de SOLO LECTURA (pliego §0, regla 2): no toca `pipeline/`, `data/`,
 `reports/`, `modelos/` ni el YAML. Lee `data/errores.csv`,
@@ -15,7 +18,16 @@ Regla 1 del pliego (la ventana abierta, 22/8-2/10): de v2 se muestra que
 existe y que emite -- nunca sus métricas (MAE, sesgo, serie de error, tabla
 de ventanas), y nunca junto a v1 en la misma vista. La única excepción,
 decidida por Laura el 22/8, es la curva real vs predicha: accesible para
-los dos modelos por separado, con un selector que nunca los enfrenta.
+los dos modelos por separado, con un selector que nunca los enfrenta --
+excluyente, sin opción "ambos", sin dos curvas en pantalla a la vez.
+
+Gráficos en Plotly (hover + zoom), no matplotlib: `scripts/grafico_deriva.py`
+NO se toca en este PR -- su PNG (commiteado a mano en `reports/`, Fase 4)
+sigue sirviendo tal cual para el repo. El panel construye su propia versión
+interactiva de la deriva a partir de los MISMOS datos ya calculados por ese
+módulo (`serie_diaria_v1`, `_serie_con_huecos_explicitos`,
+`dias_no_laborable_a_laborable`, `MAE_TEST_NOTEBOOK_MW`) -- lo que cambia es
+solo cómo se dibuja, no cómo se calcula.
 
 Vive en `panel/`, no en `app/`: `app/` está en `.gitignore` como carpeta de
 trabajo local (Laura, 9/8) -- no se toca ni se le quitan excepciones. Este
@@ -38,7 +50,9 @@ from datetime import date
 from pathlib import Path
 
 import pandas as pd
+import plotly.graph_objects as go
 import streamlit as st
+from plotly.subplots import make_subplots
 
 RAIZ = Path(__file__).resolve().parent.parent
 if str(RAIZ) not in sys.path:
@@ -48,7 +62,9 @@ from src.paths import DIR_DATA, DIR_REPORTS  # noqa: E402
 
 # Reutilizado de scripts/grafico_deriva.py (pliego §2.1 punto 4) -- ver la
 # nota larga más abajo, junto a cada función, sobre qué se reutiliza tal
-# cual y qué NO se reutiliza y por qué.
+# cual y qué NO se reutiliza y por qué. `construir_grafico` (la versión
+# matplotlib de dos paneles) YA NO se importa: el panel dibuja su propia
+# versión Plotly con los mismos datos (ver `construir_grafico_deriva`).
 from scripts.grafico_deriva import (  # noqa: E402
     COBERTURA_MINIMA_DIAS,
     MAE_TEST_NOTEBOOK_MW,
@@ -59,7 +75,6 @@ from scripts.grafico_deriva import (  # noqa: E402
     _serie_con_huecos_explicitos,
     _texto_cobertura_v2,
     cobertura_v2,
-    construir_grafico,
     dias_no_laborable_a_laborable,
     serie_diaria_v1,
 )
@@ -80,6 +95,12 @@ FECHA_FIN_PRUEBA_V2 = date(2026, 10, 2)
 # usuario dentro de una misma sesión, y corto de sobra para no quedarse con
 # datos de ayer si el contenedor de Streamlit Cloud lleva horas despierto.
 TTL_CACHE_SEGUNDOS = 3600
+
+COLOR_REAL = "#2ca02c"
+COLOR_PREDICHO = "#ff7f0e"
+COLOR_MAE = "#1f77b4"
+COLOR_SESGO = "#d62728"
+COLOR_TRANSICION = "rgba(218, 165, 32, 0.20)"
 
 
 # --------------------------------------------------------------------- #
@@ -113,10 +134,10 @@ def cargar_metricas() -> tuple[dict | None, str | None]:
     no un error. Por eso el panel NO reutiliza `_leer_metricas` y valida a
     mano."""
     if not RUTA_METRICAS.exists():
-        return None, "`data/metricas.json` no existe todavía."
+        return None, "no hay datos de estado todavía."
     bruto = json.loads(RUTA_METRICAS.read_text(encoding="utf-8"))
     if V1 not in bruto:
-        return None, "`data/metricas.json` no tiene todavía el bloque de v1."
+        return None, "no hay datos de v1 todavía."
     return bruto, None
 
 
@@ -128,47 +149,17 @@ def cargar_estado_md() -> str | None:
     return texto if texto.strip() else None
 
 
-# --------------------------------------------------------------------- #
-# Texto reutilizado de reports/estado_pipeline.md (pliego §2.2: "Mismo
-# texto que ya vive en reports/estado_pipeline.md; se reutiliza, no se
-# reescribe"). Se extrae del Markdown ya generado por
-# pipeline/evaluar.py::_bloque_md_modelo -- el panel NO importa pipeline/
-# (Regla 2 del pliego, y además pipeline/evaluar.py arrastra dependencias
-# de producción -- requests, holidays vía src.datos -- que el panel no
-# necesita) y NO reescribe el texto a mano, porque dos copias del mismo
-# párrafo divergen con el tiempo igual que divergirían dos MAE calculados
-# por separado.
-# --------------------------------------------------------------------- #
-
-
-def extraer_seccion_notebook(estado_md: str, modelo: str) -> str | None:
-    marcador_modelo = f"## Modelo: {modelo}"
-    if marcador_modelo not in estado_md:
-        return None
-    resto = estado_md.split(marcador_modelo, 1)[1].split("\n---", 1)[0]
-    cabecera = "### Por qué el MAE de producción no coincide con el del notebook"
-    if cabecera not in resto:
-        return None
-    seccion = resto.split(cabecera, 1)[1]
-    seccion = re.split(r"\n### ", seccion)[0]
-    return (cabecera + seccion).strip()
-
-
 def extraer_fechas_presentes(estado_md: str, modelo: str) -> int | None:
-    """El mismo conteo que ya calcula y escribe `pipeline/evaluar.py`
-    (`n_dias_por_modelo`, fechas de calendario distintas de `horizonte` en
-    `errores.csv`, publicadas + diagnóstico) -- leído del texto, no
-    recalculado aquí (pliego §2.9: "NO recalcular métricas por tu
-    cuenta")."""
+    """El mismo conteo que ya calcula y escribe el pipeline (fechas de
+    calendario distintas con al menos una hora, publicadas + diagnóstico)
+    -- leído del texto generado, no recalculado aquí (pliego §2.9: "NO
+    recalcular métricas por tu cuenta"). Solo se usa el número: el texto
+    que lo rodea (rutas de fichero incluidas) no llega a la pantalla."""
     marcador_modelo = f"## Modelo: {modelo}"
     if marcador_modelo not in estado_md:
         return None
     resto = estado_md.split(marcador_modelo, 1)[1].split("\n---", 1)[0]
-    m = re.search(
-        r"Fechas presentes en `data/errores\.csv` para este modelo "
-        r"\(publicadas \+ diagnóstico\): (\d+)",
-        resto,
-    )
+    m = re.search(r"Fechas presentes en `data/errores\.csv`[^:]*: (\d+)", resto)
     return int(m.group(1)) if m else None
 
 
@@ -178,7 +169,7 @@ def texto_v2_seguro(metricas: dict) -> str:
     `metricas`; el panel puede recibir un `metricas.json` sin ese bloque
     (pliego §2.6) y no debe reventar por ello."""
     if V2 not in metricas:
-        return "v2: sin datos en metricas.json todavía."
+        return "v2: sin datos todavía."
     return _texto_cobertura_v2(cobertura_v2(metricas))
 
 
@@ -189,13 +180,11 @@ def texto_v2_seguro(metricas: dict) -> str:
 # de deriva). Generalizarla a un módulo común es justo el tipo de refactor
 # que el pliego pide anotar antes de hacer ("si hay que refactorizar algo a
 # un módulo común, decirlo antes de hacerlo") -- decisión: NO se hace en
-# este PR. `scripts/grafico_deriva.py` se queda intacto tal y como salió
-# del PR 1; lo único que comparten esta función y `serie_diaria_v1` es un
-# filtro de una línea (`modelo == X` y `h_adelanto_h > 0`), que no es la
-# lógica que el pliego pide no duplicar (agregación diaria, huecos, media
-# de moda, referencia de notebook) -- eso sigue viviendo solo en
-# `grafico_deriva.py` y se reutiliza tal cual en la sección de deriva más
-# abajo.
+# este PR. `scripts/grafico_deriva.py` se queda intacto; lo único que
+# comparten esta función y `serie_diaria_v1` es un filtro de una línea
+# (`modelo == X` y `h_adelanto_h > 0`), que no es la lógica que el pliego
+# pide no duplicar (agregación diaria, huecos, media de moda, referencia
+# histórica) -- eso sigue viviendo solo en `grafico_deriva.py`.
 # --------------------------------------------------------------------- #
 
 
@@ -238,37 +227,150 @@ def techo_modelo(predicciones: pd.DataFrame | None, modelo: str) -> float | None
     return float(sub["valor_predicho"].max()) if not sub.empty else None
 
 
-def construir_grafico_curva(dia_df: pd.DataFrame, modelo: str, techo: float | None):
+def construir_grafico_curva(dia_df: pd.DataFrame, modelo: str, techo: float | None) -> go.Figure:
     """Curva real vs predicha de un solo día, un solo modelo (pliego §2.3:
-    "un modelo en pantalla; ninguna superposición"). Gráfico nuevo, no
-    reutiliza `construir_grafico` (ese es el de deriva, dos paneles
-    MAE/sesgo apilados -- forma distinta, para datos distintos)."""
-    import matplotlib.pyplot as plt
-
-    fig, ax = plt.subplots(figsize=(10, 4.5))
-    horas = dia_df["horizonte_madrid"]
-    ax.plot(horas, dia_df["valor_real"], marker="o", color="tab:green", label="Real")
-    ax.plot(
-        horas,
-        dia_df["valor_predicho"],
-        marker="o",
-        color="tab:orange",
-        label="Predicho",
+    "un modelo en pantalla; ninguna superposición"). Plotly: hover con el
+    valor exacto de cada hora y zoom, que un PNG estático no da."""
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=dia_df["horizonte_madrid"],
+            y=dia_df["valor_real"],
+            mode="lines+markers",
+            name="Real",
+            line=dict(color=COLOR_REAL, width=2),
+            hovertemplate="%{x|%H:%M} -- Real: %{y:,.0f} MW<extra></extra>",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=dia_df["horizonte_madrid"],
+            y=dia_df["valor_predicho"],
+            mode="lines+markers",
+            name="Predicho",
+            line=dict(color=COLOR_PREDICHO, width=2),
+            hovertemplate="%{x|%H:%M} -- Predicho: %{y:,.0f} MW<extra></extra>",
+        )
     )
     if techo is not None:
-        ax.axhline(
-            techo,
-            color="gray",
-            linestyle="--",
-            linewidth=1,
-            label=f"{techo:,.1f} MW -- máximo predicho observado de {modelo} (mínimo del techo real, no el máximo posible)",
+        fig.add_hline(
+            y=techo,
+            line_dash="dash",
+            line_color="gray",
+            annotation_text=f"{techo:,.1f} MW -- máximo predicho observado de {modelo} (mínimo del techo real)",
+            annotation_position="top left",
+            annotation_font_size=10,
         )
-    ax.set_ylabel("Demanda (MW)")
-    ax.set_xlabel("Hora (Madrid)")
-    ax.set_title(f"Curva real vs predicha -- {modelo}, {dia_df['fecha'].iloc[0]}")
-    ax.legend(loc="lower center", bbox_to_anchor=(0.5, 1.02), fontsize=8, frameon=False)
-    fig.autofmt_xdate()
-    fig.tight_layout(rect=(0, 0, 1, 0.88))
+    fig.update_layout(
+        title=f"Curva real vs predicha -- {modelo}, {dia_df['fecha'].iloc[0]}",
+        xaxis_title="Hora (Madrid)",
+        yaxis_title="Demanda (MW)",
+        hovermode="x unified",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5),
+        margin=dict(t=80),
+    )
+    return fig
+
+
+# --------------------------------------------------------------------- #
+# Deriva (pliego §2.4) -- misma serie que `scripts/grafico_deriva.py`
+# (reutilizada tal cual: `serie_diaria_v1`, `_serie_con_huecos_explicitos`,
+# `dias_no_laborable_a_laborable`, `MAE_TEST_NOTEBOOK_MW`), dibujada en
+# Plotly en vez de matplotlib porque `construir_grafico` de ese módulo
+# escribe el PNG que sigue viviendo en `reports/` -- no se toca, no se
+# reutiliza su función de dibujo, solo sus datos.
+# --------------------------------------------------------------------- #
+
+
+def construir_grafico_deriva(serie: pd.DataFrame, dias_marcados: set) -> go.Figure:
+    """Dos paneles apilados, eje de tiempo compartido: MAE arriba (con la
+    referencia histórica como línea horizontal etiquetada -- nunca como
+    umbral), sesgo abajo (con el cero marcado, el signo es la información).
+    Días de transición no_laborable -> laborable resaltados en los dos
+    paneles. Días con `n` por debajo de la moda, anotados con su `n`."""
+    fig = make_subplots(
+        rows=2,
+        cols=1,
+        shared_xaxes=True,
+        vertical_spacing=0.08,
+        subplot_titles=("MAE diario -- v1 (solo horas publicadas)", "Sesgo diario -- v1"),
+    )
+
+    x = pd.to_datetime(serie["fecha"])
+
+    for dia in sorted(dias_marcados):
+        dia_ts = pd.Timestamp(dia)
+        if x.min() <= dia_ts <= x.max():
+            fig.add_vrect(
+                x0=dia_ts - pd.Timedelta(hours=12),
+                x1=dia_ts + pd.Timedelta(hours=12),
+                fillcolor=COLOR_TRANSICION,
+                line_width=0,
+                row="all",
+                col=1,
+            )
+
+    fig.add_trace(
+        go.Scatter(
+            x=x,
+            y=serie["mae"],
+            mode="lines+markers",
+            name="MAE diario",
+            line=dict(color=COLOR_MAE, width=2),
+            hovertemplate="%{x|%d/%m} -- MAE: %{y:,.0f} MW<extra></extra>",
+        ),
+        row=1,
+        col=1,
+    )
+    fig.add_hline(
+        y=MAE_TEST_NOTEBOOK_MW,
+        line_dash="dash",
+        line_color="gray",
+        annotation_text=f"{MAE_TEST_NOTEBOOK_MW:,.2f} MW -- referencia histórica, no es meta de producción",
+        annotation_position="top left",
+        annotation_font_size=10,
+        row=1,
+        col=1,
+    )
+
+    n_moda = serie["n"].mode()
+    n_moda = n_moda.iloc[0] if not n_moda.empty else None
+    for _, fila in serie.iterrows():
+        if pd.isna(fila["n"]):
+            continue
+        if n_moda is not None and fila["n"] != n_moda:
+            fig.add_annotation(
+                x=pd.Timestamp(fila["fecha"]),
+                y=fila["mae"],
+                text=f"n={int(fila['n'])}",
+                showarrow=True,
+                arrowhead=0,
+                arrowcolor="dimgray",
+                ax=25,
+                ay=25,
+                font=dict(size=10, color="dimgray"),
+                row=1,
+                col=1,
+            )
+
+    fig.add_trace(
+        go.Scatter(
+            x=x,
+            y=serie["sesgo"],
+            mode="lines+markers",
+            name="Sesgo diario",
+            line=dict(color=COLOR_SESGO, width=2),
+            hovertemplate="%{x|%d/%m} -- Sesgo: %{y:,.0f} MW<extra></extra>",
+        ),
+        row=2,
+        col=1,
+    )
+    fig.add_hline(y=0, line_color="black", line_width=1, row=2, col=1)
+
+    fig.update_yaxes(title_text="MAE diario (MW)", row=1, col=1)
+    fig.update_yaxes(title_text="Sesgo diario (MW)<br>+ infrapredicción / − sobrepredicción", row=2, col=1)
+    fig.update_xaxes(title_text="Fecha del horizonte (Madrid)", row=2, col=1)
+    fig.update_layout(showlegend=False, hovermode="x unified", height=650)
     return fig
 
 
@@ -276,8 +378,8 @@ def construir_grafico_curva(dia_df: pd.DataFrame, modelo: str, techo: float | No
 # Página -- envuelta en main() y bajo `if __name__ == "__main__"` (patrón
 # estándar de Streamlit, ver docs de apps multipágina) para poder importar
 # las funciones puras de arriba desde tests/test_panel.py sin ejecutar la
-# UI: `streamlit run app/panel.py` sí ejecuta el módulo como `__main__`,
-# un `import app.panel` desde un test no.
+# UI: `streamlit run panel/panel.py` sí ejecuta el módulo como `__main__`,
+# un `import panel.panel` desde un test no.
 # --------------------------------------------------------------------- #
 
 
@@ -308,8 +410,8 @@ def _pagina() -> None:
         col2.metric(
             "Fechas con datos (v1)",
             fechas_v1 if fechas_v1 is not None else "—",
-            help="Fechas de calendario distintas en data/errores.csv para v1 "
-            "(publicadas + diagnóstico) -- mismo número que reports/estado_pipeline.md.",
+            help="Fechas de calendario distintas con al menos una hora "
+            "evaluada (publicadas + diagnóstico).",
         )
         col3.metric(
             "Muestra suficiente (v1)",
@@ -333,20 +435,19 @@ def _pagina() -> None:
             )
         st.table(pd.DataFrame(filas).set_index("Ventana"))
 
-        # Criterio 6bis: el encuadre, en pantalla y no en un desplegable.
-        if estado_md is not None:
-            seccion = extraer_seccion_notebook(estado_md, V1)
-            if seccion is not None:
-                st.markdown(seccion)
-            else:
-                st.warning(
-                    "`reports/estado_pipeline.md` no tiene todavía la sección "
-                    "de encuadre del MAE para v1."
-                )
-        else:
-            st.warning(
-                "`reports/estado_pipeline.md` no existe todavía: sin encuadre que mostrar."
+        # Criterio 6bis: el encuadre, en pantalla y no en un desplegable --
+        # recortado a una sola línea (pliego, PR de gráficos interactivos):
+        # el concepto ("no comparable"), no el origen del número.
+        referencia = bloque_v1.get("referencia", {})
+        mae_referencia = referencia.get("mae_test_notebook")
+        if mae_referencia is not None:
+            st.caption(
+                f"El MAE de producción no es comparable con los "
+                f"{mae_referencia:,.2f} MW de la medición de referencia: "
+                "limitaciones conocidas del modelo, no fallos del pipeline."
             )
+        else:
+            st.caption("Sin cifra de referencia todavía.")
 
     st.divider()
 
@@ -364,7 +465,7 @@ def _pagina() -> None:
         )
 
     if errores is None:
-        st.info("`data/errores.csv` no existe o está vacío todavía: sin curva que mostrar.")
+        st.info("Sin datos de errores todavía: no hay curva que mostrar.")
     else:
         publicado = horas_publicadas(errores, modelo_elegido)
         if publicado.empty:
@@ -388,7 +489,7 @@ def _pagina() -> None:
             dia_df = publicado[publicado["fecha"] == dia_elegido]
             techo = techo_modelo(predicciones, modelo_elegido)
             fig_curva = construir_grafico_curva(dia_df, modelo_elegido, techo)
-            st.pyplot(fig_curva)
+            st.plotly_chart(fig_curva, use_container_width=True)
 
             transicion = dias_no_laborable_a_laborable(dia_elegido, dia_elegido)
             if dia_elegido in transicion:
@@ -400,30 +501,29 @@ def _pagina() -> None:
 
     st.divider()
 
-    # ----- Deriva (pliego §2.4) -- gráfico del PR 1, reutilizado tal cual #
+    # ----- Deriva (pliego §2.4) ----------------------------------------- #
     st.header("Deriva del error diario -- v1")
 
     if errores is None:
-        st.info("`data/errores.csv` no existe o está vacío todavía: sin deriva que mostrar.")
+        st.info("Sin datos de errores todavía: no hay deriva que mostrar.")
     elif metricas is None:
         st.info(f"No se puede mostrar la deriva: {error_metricas}")
     else:
         serie = serie_diaria_v1(errores)
         if serie.empty:
-            st.info("Ninguna hora publicada de v1 en errores.csv todavía.")
+            st.info("Ninguna hora publicada de v1 todavía.")
         else:
             serie_con_huecos = _serie_con_huecos_explicitos(serie)
             dias_marcados = dias_no_laborable_a_laborable(
                 serie["fecha"].min(), serie["fecha"].max()
             )
-            texto_v2 = texto_v2_seguro(metricas)
-            fig_deriva = construir_grafico(serie_con_huecos, dias_marcados, texto_v2)
-            st.pyplot(fig_deriva)
+            fig_deriva = construir_grafico_deriva(serie_con_huecos, dias_marcados)
+            st.plotly_chart(fig_deriva, use_container_width=True)
+            st.caption(texto_v2_seguro(metricas))
             st.caption(
                 "El signo del sesgo importa más que su tamaño: dos días pueden "
                 "tener MAE alto por motivos opuestos -- uno infrapredice, el "
-                "otro sobrepredice -- y eso solo se ve en el panel de abajo, "
-                "nunca en el MAE solo."
+                "otro sobrepredice."
             )
 
     st.divider()
@@ -432,7 +532,7 @@ def _pagina() -> None:
     st.header("v2 -- en periodo de prueba")
 
     if metricas is None or V2 not in metricas:
-        st.info("Sin datos de v2 en `data/metricas.json` todavía.")
+        st.info("Sin datos de v2 todavía.")
     else:
         bloque_v2 = metricas[V2]
         fechas_v2 = extraer_fechas_presentes(estado_md, V2) if estado_md else None
