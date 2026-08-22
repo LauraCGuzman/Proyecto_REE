@@ -32,15 +32,41 @@ por sí mismo qué horas son fiables"):
     con TODAS sus horas UTC presentes y `n_lecturas == 12` -- ya maneja DST
     con `DateOffset`, no se reimplementa).
 
-Solo demanda_real (indicador 1293): el pliego (§2) no pide descargar
-`demanda_prevista` (544, benchmark de REE) ni sintetizar `es_evento`
-(anotación manual de dos ventanas históricas conocidas, ver
-`src/datos.py`). Por eso `demanda_horaria_extendida.parquet` tiene
-DELIBERADAMENTE solo dos columnas -- `datetime_utc`, `demanda_real` -- en
-vez de las cuatro del fichero congelado: añadir `demanda_prevista=NaN` /
-`es_evento=False` de relleno para las filas nuevas fabricaría un dato que
-nadie pidió. Las features de `src/features.py` (Fase 5) solo necesitan
-`demanda_real`.
+Tres columnas -- `datetime_utc`, `demanda_real`, `demanda_prevista` --
+revisado tras la primera versión de este script (que solo traía
+`demanda_real`, indicador 1293). `demanda_prevista` (indicador 544) no es
+input de ningún entrenamiento -- `src/features.py` no la toca -- pero es la
+previsión oficial de REE, la misma que sostiene el `mae_baseline` de REE
+(`notebooks/descarga_historico.ipynb`, mismo patrón de descarga que
+`demanda_real`); sin ella no hay con qué comparar al modelo contra REE en
+el rango nuevo (decisión de Laura, log de este PR).
+
+`demanda_real` sigue gobernando qué horas entran en el fichero (pliego §2:
+`n_lecturas == 12`, corte en el último día natural completo). Para
+`demanda_prevista` se aplica el mismo filtro de calidad, mismo criterio,
+pero de forma independiente -- si una hora de `demanda_prevista` viniera
+incompleta sin que le pasara lo mismo a `demanda_real` (algo que no ha
+ocurrido en la ventana descargada, ver log), esa hora se queda en el
+fichero con `demanda_real` real y `demanda_prevista` en NaN, en vez de
+descartar la fila entera por un problema de una sola columna -- mismo
+comportamiento que ya tiene el fichero original (`demanda_prevista` no
+gobierna nunca qué filas hay).
+
+`resample_horario_con_conteo` (`src/datos.py`) está fijado a la columna
+`demanda_real` -- para reutilizarla tal cual con `demanda_prevista` (pliego
+§2: "no reimplementar la agregación") se renombra la columna antes de
+llamarla y se deshace el renombrado después (`_resamplear_reutilizando`,
+más abajo). La alternativa (una segunda función de resample solo para
+cambiar el nombre de columna) sería la reimplementación que el pliego
+pide evitar.
+
+`es_evento` se queda FUERA, a propósito (Laura, log de este PR: "puedes
+dejarla fuera, o incluirla si sale gratis del mismo camino"). No sale
+gratis: no es un indicador de e·sios, es una anotación manual de dos
+ventanas históricas conocidas (28-A y 11-J, ver
+`notebooks/analisis_historico_2_demandas.ipynb` celda 13) que alguien
+tendría que revisar a mano fecha a fecha sobre el rango nuevo -- eso es
+curación editorial, no descarga, y no entra en el alcance de este script.
 
 Uso:
     python scripts/descargar_2026h2.py                  # normal: escribe demanda_horaria_extendida.parquet
@@ -63,10 +89,16 @@ for _stream in (sys.stdout, sys.stderr):
         _stream.reconfigure(encoding="utf-8", errors="replace")
 
 from pipeline.predecir import encontrar_ultimo_dia_completo
-from src.datos import descargar_demanda_cruda, resample_horario_con_conteo
+from src.datos import descargar_demanda_cruda, obtener_token, resample_horario_con_conteo
+from src.esios_client import crear_sesion, descargar_indicador
 from src.paths import DIR_DATA, DIR_PROCESSED
 
 TZ_MADRID = "Europe/Madrid"
+
+# Mismo indicador que usa notebooks/descarga_historico.ipynb para construir
+# la columna demanda_prevista del fichero congelado (misma llamada,
+# `descargar_rango(sesion, 544, ..., 'demanda_prevista')`).
+INDICADOR_DEMANDA_PREVISTA = 544
 
 RUTA_ORIGINAL = DIR_PROCESSED / "demanda_horaria.parquet"
 RUTA_ERRORES = DIR_DATA / "errores.csv"
@@ -113,6 +145,46 @@ def _descargar_por_meses(inicio: pd.Timestamp, fin: pd.Timestamp) -> pd.DataFram
     return pd.concat(trozos, ignore_index=True).sort_values("datetime_utc").reset_index(drop=True)
 
 
+def _descargar_prevista_por_meses(inicio: pd.Timestamp, fin: pd.Timestamp) -> pd.DataFrame:
+    """Igual que `_descargar_por_meses`, pero para `demanda_prevista`
+    (indicador 544): `src.datos.descargar_demanda_cruda` está fijada al
+    indicador 1293 (demanda_real), así que aquí se llama a
+    `descargar_indicador` directamente -- el mismo primitivo de bajo nivel
+    que usa `descargar_demanda_cruda` por dentro, ni un HTTP ni una
+    normalización reimplementados."""
+    sesion = crear_sesion(obtener_token())
+    cortes = list(pd.date_range(inicio, fin, freq="MS", tz="UTC"))
+    if not cortes or cortes[0] != inicio:
+        cortes = [inicio] + cortes
+    if cortes[-1] != fin:
+        cortes = cortes + [fin]
+
+    trozos = []
+    for tramo_inicio, tramo_fin in zip(cortes[:-1], cortes[1:]):
+        if tramo_inicio >= tramo_fin:
+            continue
+        print(f"Descargando demanda_prevista {tramo_inicio} -> {tramo_fin} ...")
+        df_tramo = descargar_indicador(
+            sesion, INDICADOR_DEMANDA_PREVISTA, tramo_inicio, tramo_fin, "demanda_prevista"
+        )
+        print(f"  {len(df_tramo)} lecturas de 5' recibidas.")
+        trozos.append(df_tramo)
+
+    return pd.concat(trozos, ignore_index=True).sort_values("datetime_utc").reset_index(drop=True)
+
+
+def _resamplear_reutilizando(crudo: pd.DataFrame, columna: str) -> pd.DataFrame:
+    """Agrega `crudo[columna]` a horario con conteo reutilizando
+    `resample_horario_con_conteo` TAL CUAL -- esa función está fijada a la
+    columna `demanda_real` (ver `src/datos.py`), así que se renombra antes
+    de llamarla y se deshace el renombrado después. La alternativa (una
+    segunda función de resample que solo cambia el nombre de columna) sería
+    la reimplementación de la agregación que el pliego pide evitar."""
+    renombrado = crudo.rename(columns={columna: "demanda_real"})
+    resultado = resample_horario_con_conteo(renombrado)
+    return resultado.rename(columns={"demanda_real": columna, "n_lecturas": f"n_lecturas_{columna}"})
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -138,6 +210,16 @@ def main() -> int:
 
     horario_con_conteo = resample_horario_con_conteo(crudo)
 
+    # demanda_prevista (544): mismo rango, mismo margen de solape -- para
+    # poder verificarla también contra el fichero congelado. demanda_real
+    # sigue gobernando el corte y qué horas entran (más abajo); esta serie
+    # se agrega en paralelo y se cruza por datetime_utc, nunca al revés.
+    print(f"\nSondeando demanda_prevista {inicio_con_margen} -> {fin_sondeo} ...")
+    crudo_prevista = _descargar_prevista_por_meses(inicio_con_margen, fin_sondeo)
+    if crudo_prevista.empty:
+        raise RuntimeError("e·sios no devolvió ninguna lectura de demanda_prevista.")
+    horario_prevista_con_conteo = _resamplear_reutilizando(crudo_prevista, "demanda_prevista")
+
     dia_ancla_madrid = encontrar_ultimo_dia_completo(horario_con_conteo)
     if dia_ancla_madrid is None:
         raise RuntimeError(
@@ -161,10 +243,38 @@ def main() -> int:
     completas = tramo[tramo["n_lecturas"] == 12].drop(columns="n_lecturas").reset_index(drop=True)
 
     print(f"\nHoras en el tramo [{INICIO_DESCARGA}, {fin_utc_exclusivo}): {len(tramo)}")
-    print(f"Horas completas (n_lecturas == 12): {len(completas)}")
+    print(f"Horas completas de demanda_real (n_lecturas == 12): {len(completas)}")
     print(f"Horas incompletas descartadas (n_lecturas != 12): {len(incompletas)}")
     if not incompletas.empty:
         print(incompletas[["datetime_utc", "n_lecturas"]].to_string(index=False))
+
+    # demanda_prevista: mismo filtro de calidad, aplicado por separado --
+    # una hora incompleta de demanda_prevista NO tira la fila (demanda_real
+    # sigue gobernando qué horas hay), la deja con demanda_prevista en NaN,
+    # igual que ya se comporta el fichero original (nunca se descarta una
+    # fila por un problema solo en esa columna).
+    tramo_prevista = horario_prevista_con_conteo[
+        (horario_prevista_con_conteo["datetime_utc"] >= INICIO_DESCARGA)
+        & (horario_prevista_con_conteo["datetime_utc"] < fin_utc_exclusivo)
+    ].sort_values("datetime_utc").reset_index(drop=True)
+    incompletas_prevista = tramo_prevista[tramo_prevista["n_lecturas_demanda_prevista"] != 12]
+    completas_prevista = (
+        tramo_prevista[tramo_prevista["n_lecturas_demanda_prevista"] == 12]
+        .drop(columns="n_lecturas_demanda_prevista")
+        .reset_index(drop=True)
+    )
+    print(f"\nHoras completas de demanda_prevista (n_lecturas == 12): {len(completas_prevista)}")
+    print(f"Horas incompletas de demanda_prevista descartadas: {len(incompletas_prevista)}")
+    if not incompletas_prevista.empty:
+        print(incompletas_prevista[["datetime_utc", "n_lecturas_demanda_prevista"]].to_string(index=False))
+
+    # Cruce: demanda_prevista se añade por datetime_utc, con NaN donde no
+    # haya hora completa de prevista para esa hora de demanda_real.
+    completas = completas.merge(
+        completas_prevista[["datetime_utc", "demanda_prevista"]], on="datetime_utc", how="left"
+    )
+    nulos_prevista = int(completas["demanda_prevista"].isna().sum())
+    print(f"Horas de demanda_real sin demanda_prevista correspondiente: {nulos_prevista}")
 
     # Continuidad: dentro del tramo completo, ninguna hora ausente aparte de
     # las incompletas ya declaradas arriba (pliego §4).
@@ -180,7 +290,7 @@ def main() -> int:
     # congelado, comparada hora a hora contra ese fichero. Esto sí puede
     # fallar si e·sios ha revisado datos históricos -- a diferencia de
     # comparar el original contra sí mismo, que sería tautológico.
-    original = pd.read_parquet(RUTA_ORIGINAL)[["datetime_utc", "demanda_real"]]
+    original = pd.read_parquet(RUTA_ORIGINAL)[["datetime_utc", "demanda_real", "demanda_prevista"]]
     margen = horario_con_conteo[
         (horario_con_conteo["datetime_utc"] >= inicio_con_margen)
         & (horario_con_conteo["datetime_utc"] < INICIO_DESCARGA)
@@ -201,7 +311,7 @@ def main() -> int:
     diferencias_margen = (margen["demanda_real"] - original_margen["demanda_real"]).abs()
     diferencia_maxima_margen = float(diferencias_margen.max())
     print(
-        f"\nSolape genuino ({inicio_con_margen} -> {INICIO_DESCARGA}, "
+        f"\nSolape genuino, demanda_real ({inicio_con_margen} -> {INICIO_DESCARGA}, "
         f"{len(margen)} horas re-descargadas de e·sios): "
         f"diferencia máxima = {diferencia_maxima_margen}"
     )
@@ -209,6 +319,32 @@ def main() -> int:
         "El margen de solape no reproduce el original exactamente -- posible "
         "revisión de datos históricos por parte de e·sios. NO se escribe el "
         "fichero."
+    )
+
+    # Mismo solape genuino, para demanda_prevista.
+    margen_prevista = horario_prevista_con_conteo[
+        (horario_prevista_con_conteo["datetime_utc"] >= inicio_con_margen)
+        & (horario_prevista_con_conteo["datetime_utc"] < INICIO_DESCARGA)
+    ].sort_values("datetime_utc").reset_index(drop=True)
+    assert len(margen_prevista) == len(original_margen), (
+        f"El margen de solape de demanda_prevista trajo {len(margen_prevista)} horas, "
+        f"el original tiene {len(original_margen)} -- no son directamente comparables."
+    )
+    assert (margen_prevista["n_lecturas_demanda_prevista"] == 12).all(), (
+        "El margen de solape de demanda_prevista (ya publicado hace semanas) tiene "
+        "horas incompletas -- inesperado, revisar antes de seguir."
+    )
+    diferencias_margen_prevista = (
+        margen_prevista["demanda_prevista"] - original_margen["demanda_prevista"]
+    ).abs()
+    diferencia_maxima_margen_prevista = float(diferencias_margen_prevista.max())
+    print(
+        f"Solape genuino, demanda_prevista: diferencia máxima = "
+        f"{diferencia_maxima_margen_prevista}"
+    )
+    assert diferencia_maxima_margen_prevista == 0.0, (
+        "El margen de solape de demanda_prevista no reproduce el original "
+        "exactamente. NO se escribe el fichero."
     )
 
     # Concatenación con el histórico congelado -- se lee, nunca se escribe.
@@ -234,8 +370,16 @@ def main() -> int:
     diferencia_maxima_construccion = float(
         (comun["demanda_real"] - original_ordenado["demanda_real"]).abs().max()
     )
-    print(f"Solape por construcción (autoconsistencia): diferencia máxima = {diferencia_maxima_construccion}")
+    diferencia_maxima_construccion_prevista = float(
+        (comun["demanda_prevista"] - original_ordenado["demanda_prevista"]).abs().max()
+    )
+    print(
+        f"Solape por construcción (autoconsistencia): demanda_real="
+        f"{diferencia_maxima_construccion}, demanda_prevista="
+        f"{diferencia_maxima_construccion_prevista}"
+    )
     assert diferencia_maxima_construccion == 0.0
+    assert diferencia_maxima_construccion_prevista == 0.0
 
     # Cruce con producción: valor_real de agosto en errores.csv debe coincidir.
     if RUTA_ERRORES.exists():
@@ -271,6 +415,12 @@ def main() -> int:
     )
     veces_superado = int((extendida["demanda_real"] > 38_861.1).sum())
     print(f"Horas con demanda_real > 38.861,1 MW: {veces_superado}")
+
+    nulos_prevista_total = int(extendida["demanda_prevista"].isna().sum())
+    print(
+        f"\ndemanda_prevista: {nulos_prevista_total} horas en NaN sobre "
+        f"{len(extendida)} totales (0 esperadas en el tramo original, congelado)."
+    )
 
     args.salida.parent.mkdir(parents=True, exist_ok=True)
     extendida.to_parquet(args.salida, index=False)
