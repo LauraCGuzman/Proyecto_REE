@@ -210,9 +210,29 @@ Las horas realmente publicadas —las que se predijeron antes de que ocurrieran�
 **No son comparables.** El 1.263 MW se midió sobre 4.336 horas de un semestre entero. La métrica viva se calcula sobre ventanas móviles de días, y hay dos limitaciones conocidas del modelo que la empujan hacia arriba:
 
 - **El arranque de la semana.** El modelo sabe qué tipo de día está prediciendo y cuánto se consumió ayer a la misma hora, pero **no sabe de qué tipo de día viene ese punto de partida**. Cuando el ancla es un domingo y el objetivo un lunes laborable, arranca de un nivel demasiado bajo y no tiene forma de corregirlo. En el histórico el caso frecuente es viernes → sábado, que aprende bien; los otros no. Como toda ventana de siete días contiene exactamente un lunes, esto no es un transitorio que desaparezca con más datos: es el suelo del modelo.
-- **El techo del árbol.** Ya está explicado más arriba en abstracto; en producción tiene un número exacto. La predicción máxima que el modelo puede emitir es **38.861,1 MW**, el promedio de su hoja más alta. En agosto de 2026 la demanda real superó los 40.000 MW en al menos dos horas de las evaluadas. En esas horas la desviación existe por construcción del modelo, no por un fallo del pipeline.
+- **El techo del árbol.** Ya está explicado más arriba en abstracto; en producción tiene un número exacto. La predicción máxima que el modelo puede emitir es **38.861,1 MW**, el promedio de su hoja más alta. Dos cifras distintas miden ese techo y conviene no confundirlas: entre las horas ya evaluadas en producción, la demanda real superó los 40.000 MW en dos ocasiones; pero sobre la serie horaria de julio y agosto de 2026 completa —incluido julio, cuando el modelo aún no emitía— hay **299 horas por encima del techo**, con un máximo de 42.742,3 MW el 8 de julio. En esas horas el modelo se habría quedado corto por casi 4.000 MW, un 10 %, de forma sistemática y por construcción.
 
 La primera se podría atacar con otra variable. La segunda no: ninguna variable nueva arregla que un árbol de decisión no extrapole. Haría falta otra familia de modelo, y eso es otro proyecto.
+
+### La comparación que sí es justa: contra el operador del sistema, en las mismas horas
+
+Comparar el error de producción contra el 1.263 MW del ejercicio histórico no dice gran cosa: son censos distintos. La comparación que sí informa es contra la previsión oficial de REE **restringida exactamente a las mismas horas** que el modelo ha publicado.
+
+Sobre las **127 horas publicadas entre el 14 y el 21 de agosto de 2026** — las que el modelo predijo antes de que ocurrieran:
+
+| | Error medio | Sesgo |
+|---|---|---|
+| Modelo A, en producción | **2.000,6 MW** | +898,8 MW |
+| Previsión oficial de REE, mismas horas | **384,8 MW** | +25,4 MW |
+
+Un factor 5,2. El censo va escrito dentro de la frase a propósito: ambas cifras se mueven cada día que el pipeline emite, y un número sin su ventana caduca en 24 horas.
+
+Dos cosas que el desglose diario deja ver y el agregado esconde:
+
+- **El 17 de agosto, el peor día del modelo con diferencia (5.650,8 MW), es el mejor día de REE de toda la serie (258,1 MW).** El día no era difícil de predecir. Falló el modelo, por la limitación del arranque descrita arriba: era un lunes con ancla en domingo. Tener un tercero prediciendo el mismo día es lo que permite separar "día raro" de "modelo con un hueco estructural".
+- **El 20 de agosto es el peor día de los dos** (1.837,0 el modelo, 680,1 REE, casi el doble de su media) y el único en que ambos sobrepredicen. Ese día sí era raro: la ola de calor rompiéndose. Es un fallo del que nadie está a salvo, y no es del mismo tipo que el anterior.
+
+Para contexto, la previsión oficial acierta a 265,8 MW sobre el histórico completo. Que en agosto se le vaya a 384,8 dice que el mes fue difícil para todos; la distancia relativa se mantiene.
 
 **Mientras la ventana no cubra al menos siete fechas distintas con horas publicadas, no se publica ningún error medio.** Se muestra un guion. Un error medio calculado sobre tres días es una mentira con formato de métrica, y preferimos el hueco visible al número tranquilizador.
 
