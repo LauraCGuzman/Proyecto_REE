@@ -4,8 +4,8 @@
 
 ## Modelo: v1
 
-Última corrida: 2026-08-23T05:48:26Z
-Fechas presentes en `data/errores.csv` para este modelo (publicadas + diagnóstico): 11
+Última corrida: 2026-08-24T05:56:33Z
+Fechas presentes en `data/errores.csv` para este modelo (publicadas + diagnóstico): 12
 
 ### Métrica publicada (`h_adelanto_h > 0`)
 
@@ -13,9 +13,9 @@ Fechas presentes en `data/errores.csv` para este modelo (publicadas + diagnósti
 
 | Ventana | MAE (MW) | Sesgo medio (MW) | n horas | Fechas cubiertas (gobierna) | Span (días) | MAE test notebook (MW) |
 |---|---|---|---|---|---|---|
-| 7d | 2134.76 | +1106.78 | 112 | 7 | 6.6 | 1263.02 |
-| 30d | 1908.82 | +896.74 | 143 | 9 | 8.6 | 1263.02 |
-| 90d | 1908.82 | +896.74 | 143 | 9 | 8.6 | 1263.02 |
+| 7d | 2056.37 | +1028.39 | 112 | 7 | 6.6 | 1263.02 |
+| 30d | 1896.07 | +985.83 | 159 | 10 | 9.6 | 1263.02 |
+| 90d | 1896.07 | +985.83 | 159 | 10 | 9.6 | 1263.02 |
 
 ### Por qué el MAE de producción no coincide con el del notebook
 
@@ -28,8 +28,8 @@ El MAE de producción de la tabla de arriba no es directamente comparable al 126
 
 ## Modelo: v2
 
-Última corrida: 2026-08-23T05:48:26Z
-Fechas presentes en `data/errores.csv` para este modelo (publicadas + diagnóstico): 3
+Última corrida: 2026-08-24T05:56:33Z
+Fechas presentes en `data/errores.csv` para este modelo (publicadas + diagnóstico): 4
 
 ### Métrica publicada (`h_adelanto_h > 0`)
 
@@ -37,9 +37,9 @@ Fechas presentes en `data/errores.csv` para este modelo (publicadas + diagnósti
 
 | Ventana | MAE (MW) | Sesgo medio (MW) | n horas | Fechas cubiertas (gobierna) | Span (días) |
 |---|---|---|---|---|---|
-| 7d | — | — | 16 | 1 | 0.6 |
-| 30d | — | — | 16 | 1 | 0.6 |
-| 90d | — | — | 16 | 1 | 0.6 |
+| 7d | — | — | 32 | 2 | 1.6 |
+| 30d | — | — | 32 | 2 | 1.6 |
+| 90d | — | — | 32 | 2 | 1.6 |
 
 > **Muestra insuficiente todavía.** Ninguna ventana alcanza las 7 fechas de calendario distintas con al menos una hora publicada que exige la cobertura mínima -- el MAE se muestra como `—` (`null` en `data/metricas.json`) porque lo que no se puede afirmar todavía no se escribe.
 
