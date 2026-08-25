@@ -1,31 +1,31 @@
 {
   "v1": {
-    "actualizado_utc": "2026-08-24T05:56:33Z",
+    "actualizado_utc": "2026-08-25T05:50:33Z",
     "modelo": "v1",
     "muestra_insuficiente": false,
     "publicado": {
       "criterio": "h_adelanto_h > 0",
       "ventanas": {
         "7d": {
-          "mae": 2056.37,
-          "sesgo_medio": 1028.39,
+          "mae": 1792.8,
+          "sesgo_medio": 764.85,
           "n_horas": 112,
           "cobertura_dias": 6.6,
           "dias_cubiertos": 7
         },
         "30d": {
-          "mae": 1896.07,
-          "sesgo_medio": 985.83,
-          "n_horas": 159,
-          "cobertura_dias": 9.6,
-          "dias_cubiertos": 10
+          "mae": 2070.68,
+          "sesgo_medio": 1240.69,
+          "n_horas": 175,
+          "cobertura_dias": 10.6,
+          "dias_cubiertos": 11
         },
         "90d": {
-          "mae": 1896.07,
-          "sesgo_medio": 985.83,
-          "n_horas": 159,
-          "cobertura_dias": 9.6,
-          "dias_cubiertos": 10
+          "mae": 2070.68,
+          "sesgo_medio": 1240.69,
+          "n_horas": 175,
+          "cobertura_dias": 10.6,
+          "dias_cubiertos": 11
         }
       }
     },
@@ -33,25 +33,25 @@
       "criterio": "h_adelanto_h <= 0",
       "ventanas": {
         "7d": {
-          "mae": 869.0,
-          "sesgo_medio": 3.08,
+          "mae": 748.51,
+          "sesgo_medio": -117.41,
           "n_horas": 55,
           "cobertura_dias": 6.2,
           "dias_cubiertos": 8
         },
         "30d": {
-          "mae": 809.52,
-          "sesgo_medio": 83.68,
-          "n_horas": 88,
-          "cobertura_dias": 10.2,
-          "dias_cubiertos": 12
+          "mae": 771.58,
+          "sesgo_medio": 106.23,
+          "n_horas": 96,
+          "cobertura_dias": 11.2,
+          "dias_cubiertos": 13
         },
         "90d": {
-          "mae": 809.52,
-          "sesgo_medio": 83.68,
-          "n_horas": 88,
-          "cobertura_dias": 10.2,
-          "dias_cubiertos": 12
+          "mae": 771.58,
+          "sesgo_medio": 106.23,
+          "n_horas": 96,
+          "cobertura_dias": 11.2,
+          "dias_cubiertos": 13
         }
       }
     },
@@ -62,7 +62,7 @@
     }
   },
   "v2": {
-    "actualizado_utc": "2026-08-24T05:56:33Z",
+    "actualizado_utc": "2026-08-25T05:50:33Z",
     "modelo": "v2",
     "muestra_insuficiente": true,
     "publicado": {
@@ -71,23 +71,23 @@
         "7d": {
           "mae": null,
           "sesgo_medio": null,
-          "n_horas": 32,
-          "cobertura_dias": 1.6,
-          "dias_cubiertos": 2
+          "n_horas": 48,
+          "cobertura_dias": 2.6,
+          "dias_cubiertos": 3
         },
         "30d": {
           "mae": null,
           "sesgo_medio": null,
-          "n_horas": 32,
-          "cobertura_dias": 1.6,
-          "dias_cubiertos": 2
+          "n_horas": 48,
+          "cobertura_dias": 2.6,
+          "dias_cubiertos": 3
         },
         "90d": {
           "mae": null,
           "sesgo_medio": null,
-          "n_horas": 32,
-          "cobertura_dias": 1.6,
-          "dias_cubiertos": 2
+          "n_horas": 48,
+          "cobertura_dias": 2.6,
+          "dias_cubiertos": 3
         }
       }
     },
@@ -97,23 +97,23 @@
         "7d": {
           "mae": null,
           "sesgo_medio": null,
-          "n_horas": 23,
-          "cobertura_dias": 2.2,
-          "dias_cubiertos": 4
+          "n_horas": 31,
+          "cobertura_dias": 3.2,
+          "dias_cubiertos": 5
         },
         "30d": {
           "mae": null,
           "sesgo_medio": null,
-          "n_horas": 23,
-          "cobertura_dias": 2.2,
-          "dias_cubiertos": 4
+          "n_horas": 31,
+          "cobertura_dias": 3.2,
+          "dias_cubiertos": 5
         },
         "90d": {
           "mae": null,
           "sesgo_medio": null,
-          "n_horas": 23,
-          "cobertura_dias": 2.2,
-          "dias_cubiertos": 4
+          "n_horas": 31,
+          "cobertura_dias": 3.2,
+          "dias_cubiertos": 5
         }
       }
     },
