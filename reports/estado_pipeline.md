@@ -4,8 +4,8 @@
 
 ## Modelo: v1
 
-Última corrida: 2026-08-27T16:33:58Z
-Fechas presentes en `data/errores.csv` para este modelo (publicadas + diagnóstico): 15
+Última corrida: 2026-08-28T17:28:50Z
+Fechas presentes en `data/errores.csv` para este modelo (publicadas + diagnóstico): 16
 
 ### Métrica publicada (`h_adelanto_h > 0`)
 
@@ -13,9 +13,9 @@ Fechas presentes en `data/errores.csv` para este modelo (publicadas + diagnósti
 
 | Ventana | MAE (MW) | Sesgo medio (MW) | n horas | Fechas cubiertas (gobierna) | Span (días) | MAE test notebook (MW) |
 |---|---|---|---|---|---|---|
-| 7d | 1764.05 | +760.63 | 101 | 7 | 6.2 | 1263.02 |
-| 30d | 1861.30 | +1127.29 | 207 | 13 | 12.6 | 1263.02 |
-| 90d | 1861.30 | +1127.29 | 207 | 13 | 12.6 | 1263.02 |
+| 7d | 1553.48 | +1276.59 | 89 | 7 | 6.1 | 1263.02 |
+| 30d | 1836.56 | +1081.53 | 212 | 14 | 13.6 | 1263.02 |
+| 90d | 1836.56 | +1081.53 | 212 | 14 | 13.6 | 1263.02 |
 
 ### Por qué el MAE de producción no coincide con el del notebook
 
@@ -28,8 +28,8 @@ El MAE de producción de la tabla de arriba no es directamente comparable al 126
 
 ## Modelo: v2
 
-Última corrida: 2026-08-27T16:33:58Z
-Fechas presentes en `data/errores.csv` para este modelo (publicadas + diagnóstico): 7
+Última corrida: 2026-08-28T17:28:50Z
+Fechas presentes en `data/errores.csv` para este modelo (publicadas + diagnóstico): 8
 
 ### Métrica publicada (`h_adelanto_h > 0`)
 
@@ -37,9 +37,9 @@ Fechas presentes en `data/errores.csv` para este modelo (publicadas + diagnósti
 
 | Ventana | MAE (MW) | Sesgo medio (MW) | n horas | Fechas cubiertas (gobierna) | Span (días) |
 |---|---|---|---|---|---|
-| 7d | — | — | 80 | 5 | 4.6 |
-| 30d | — | — | 80 | 5 | 4.6 |
-| 90d | — | — | 80 | 5 | 4.6 |
+| 7d | — | — | 85 | 6 | 5.6 |
+| 30d | — | — | 85 | 6 | 5.6 |
+| 90d | — | — | 85 | 6 | 5.6 |
 
 > **Muestra insuficiente todavía.** Ninguna ventana alcanza las 7 fechas de calendario distintas con al menos una hora publicada que exige la cobertura mínima -- el MAE se muestra como `—` (`null` en `data/metricas.json`) porque lo que no se puede afirmar todavía no se escribe.
 
