@@ -558,8 +558,7 @@ def _pagina() -> None:
         st.markdown(
             "Sus métricas (MAE, sesgo, serie de error) **no se muestran a "
             "propósito** hasta el 2 de octubre de 2026: están pre-registradas "
-            "y se evalúan una sola vez, al cierre. No es una disculpa por lo "
-            "que falta: es la disciplina del proyecto, escrita.\n\n"
+            "y se evalúan una sola vez, al cierre. \n\n"
             "Su curva real vs predicha sí es accesible, desde el selector de "
             "arriba."
         )
