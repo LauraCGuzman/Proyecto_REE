@@ -2,9 +2,7 @@
 
 ## Qué hace este proyecto
 
-Red Eléctrica de España publica cada hora dos cosas: cuánta electricidad se ha consumido de verdad, y cuánta habían previsto que se iba a consumir. Este proyecto construye un modelo propio de previsión, lo compara con el oficial, y usa las diferencias entre lo previsto y lo real para detectar comportamientos raros en la red.
-
-La idea de fondo: si tienes un modelo que sabe cuánta demanda *debería* haber a una hora determinada, entonces las horas en las que la realidad se aparta mucho de esa expectativa son horas que merece la pena mirar. Un apagón, un fallo de telemetría, un festivo mal etiquetado, un episodio industrial.
+Red Eléctrica de España publica cada hora dos cosas: cuánta electricidad se ha consumido de verdad, y cuánta habían previsto que se iba a consumir. Este proyecto construye un modelo propio de previsión, y lo compara con el oficial.
 
 ---
 
@@ -22,31 +20,24 @@ Error medio de previsión, en megavatios. Menos es mejor.
 
 Todos los números están medidos sobre el mismo conjunto de horas del primer semestre de 2026: **4.336 horas** que el modelo no había visto nunca.
 
-La comparación que importa es contra persistencia, porque es la que un modelo tiene que batir para justificar su existencia: **1.840 → 1.263 MW es un 31 % menos de error**. La tabla de calendario sola no llega ni a eso, y la previsión oficial de REE juega en otra liga por razones que explico más abajo.
-
 ---
 
-## Cómo se ha medido, y por qué importa
-
-Esta es la parte que decide si los números anteriores valen algo.
+## Cómo se ha medido
 
 Los datos se parten en tres trozos, y cada trozo tiene un trabajo distinto:
 
-- **2023–2024 — entrenar.** El modelo aprende de aquí.
-- **2025 — elegir.** Aquí se prueban las distintas configuraciones posibles y se escoge la mejor. El modelo no aprende de estas horas, solo se usan para decidir.
-- **Primer semestre de 2026 — medir.** Se toca **una sola vez por modelo**, al final. Es la única medida honesta de cómo funcionaría el modelo con datos que no existían cuando se construyó.
+- **2023–2024 — train.** 
+- **2025 — evaluate** 
+- **P 2026 — test**
 
 El orden es siempre pasado → futuro. Nunca se entrena con datos posteriores a los que se predicen, porque eso daría un resultado buenísimo y completamente falso.
 
-**Este proyecto tuvo ese error y lo arregló.** En una versión anterior, la elección de configuración se hacía mirando el trozo de 2026. Eso hacía que los números salieran mejor de lo que eran. Al separar "elegir" de "medir", el error del modelo A subió de 1.244 a 1.263 MW. Esos 19 megavatios son la diferencia entre un número bonito y un número cierto.
-
-Hay un candado en el código que impide leer el trozo de 2026 dos veces para el mismo modelo. Si se intenta, el programa se detiene.
 
 ---
 
 ## Por qué se publican dos modelos y no uno
 
-Lo normal sería quedarse con el que da mejor número. Aquí no se puede, y explicar por qué es probablemente lo más interesante del proyecto.
+Lo normal sería quedarse con el que da mejor número.
 
 **Modelo A** usa el consumo de ayer a la misma hora.
 **Modelo B** añade el consumo de hace exactamente una semana a la misma hora.
@@ -56,31 +47,6 @@ La razón para probar el B: el consumo de un lunes se parece más al del lunes a
 Y aquí está el problema. Los dos modelos se compararon **cinco veces**, siempre sin tocar 2026: una vez con el corte principal (entrenar con 2023–2024, decidir con 2025) y cuatro veces más moviendo ese corte hacia atrás, de forma que cada comparación entrena con menos historia y evalúa en un semestre distinto de 2024 o 2025. En las cinco salieron empatados: diferencias de 10 a 14 MW cuando el propio método tiene un margen de error de unos 20. Es decir, indistinguibles.
 
 Pero al medirlos sobre 2026, el modelo B es **258 MW mejor** y además su error está mucho menos desviado hacia un lado.
-
-**No sé por qué.** Y lo que hay que hacer con eso es decirlo, no esconderlo.
-
-Si publico solo el A, estoy tirando una mejora real porque mi método de selección no la vio venir. Si publico solo el B, lo estoy eligiendo porque gana en el trozo que no debía usarse para elegir — exactamente el error que este proyecto arregló hace dos semanas.
-
-Así que van los dos, con la contradicción encima de la mesa.
-
-### Lo que se intentó para explicarla
-
-Mi primera hipótesis: 2026 consume bastante más que los años de entrenamiento (unos 2.237 MW más de media). Quizá el modelo B es mejor precisamente cuando el nivel general de consumo sube, y el trozo de 2025 no podía detectarlo porque su nivel es parecido al de 2023–2024.
-
-Para probarlo, repetí la comparación en cuatro periodos distintos, cada uno con su propio salto de nivel:
-
-| Periodo evaluado | El consumo sube | ¿Gana el modelo B? |
-|---|---|---|
-| Primer semestre 2024 | Baja 196 MW | **Sí, por 28 MW** |
-| Segundo semestre 2024 | Sube 739 MW | No, pierde por 14 MW |
-| Primer semestre 2025 | Sube 590 MW | No, pierde por 12 MW |
-| Segundo semestre 2025 | Sube 1.101 MW | No, pierde por 10 MW |
-
-**La hipótesis es falsa.** El modelo B gana justo en el único periodo donde el consumo *baja*, y en los tres donde sube pierde de forma plana, sin importar si el salto es de 590 o de 1.101 MW. Si mi explicación fuera correcta, el periodo con el salto de 1.101 MW tendría que destacar. No destaca.
-
-Hay que añadir que la comparación no aísla una sola variable: la versión con el consumo de hace una semana retira además la marca de días puente, trabaja con un censo de horas ligeramente distinto y sale de otra rejilla de hiperparámetros. Para atribuir el efecto a una causa concreta haría falta una comparación controlada que todavía no he hecho.
-
-Así que la contradicción entre 2025 y 2026 sigue sin explicación. Queda escrita como pregunta abierta.
 
 ---
 
@@ -94,11 +60,10 @@ Construí una tubería de datos completa con **8 estaciones meteorológicas** de
 
 Y funciona. En validación baja el error de 986 a 968 MW: una mejora de 18 MW cuando el ruido del método es de 12. Pasa el criterio.
 
-La quité igualmente. La columna que construí es temperatura **observada**, la que se conoce *después*. Un modelo que predice el día siguiente a las 00:00 no tiene eso: tiene la previsión meteorológica, que trae su propio error encima. Medir con la observada y presentar el resultado como rendimiento en producción es fuga de información — el modelo estaría usando algo que en el momento de predecir no existe. Lo que dice esa mejora de 18 MW es cuánto ayudaría *en el mejor caso imaginable*, y ese caso no se da.
+La columna que construí es temperatura **observada**, la que se conoce *después*. Un modelo que predice el día siguiente a las 00:00 tiene la previsión meteorológica, que trae su propio error encima. Medir con la observada y presentar el resultado como rendimiento en producción es fuga de información.
 
 Para reconstruirlo bien haría falta el archivo de previsiones meteorológicas, no el de observaciones. La API pública de AEMET sirve lo segundo, no lo primero.
 
-Como referencia del tamaño real del efecto: las ocho columnas juntas pesan un 5,9 % de las decisiones del árbol; con el consumo de hace una semana también dentro, bajan al 2,0 %. Es un efecto pequeño, y buena parte de él ya viene dentro del consumo de ayer: si ayer hizo frío y se consumió mucho, hoy probablemente también hará frío.
 
 ### Los modelos más sofisticados tampoco
 
@@ -108,71 +73,22 @@ Ese desajuste tiene un nombre: memorizar en vez de aprender. Y lo que dice es qu
 
 ### Los puentes: no hay datos suficientes
 
-Tenía una variable que marca los días puente. El modelo **nunca la usó** — literalmente cero decisiones basadas en ella, en cinco mediciones independientes.
+Tenía una variable que marca los días puente. El modelo **nunca la usó**, literalmente cero decisiones basadas en ella, en cinco mediciones independientes.
 
-Ojo con la lectura, porque es fácil equivocarse aquí: no es que los puentes no afecten al consumo. Es que en tres años solo hay **7 puentes**, unas 168 horas sobre 26.000. No hay casos suficientes para que el modelo aprenda nada de ellos.
-
-Es una distinción importante. "No hay efecto" y "no hay datos para verlo" se parecen en el resultado y son cosas muy distintas.
-
----
-
-## Lo que aprendí sobre medir
-
-Este es el hallazgo que más me va a servir en el futuro, y no tiene nada que ver con la electricidad.
-
-Al principio comparaba los modelos de una sola forma: entrenar con 2023–2024, evaluar con 2025. Un número, una conclusión.
-
-Cuando repetí la misma comparación en cuatro periodos distintos, el resultado del modelo B iba **de 28 MW mejor a 14 MW peor** según qué periodo eligiera.
-
-Es decir: mi método de comparación tenía un margen de error de unos 20 MW, y yo estaba tomando decisiones basadas en diferencias de 15. **Estaba midiendo ruido y llamándolo resultado.** Y no había forma de saberlo con un solo corte, porque un solo número no viene con su propio margen de error.
-
-De esto salió una regla que ahora aplico siempre: **si la mejora es más pequeña que la dispersión del método, no es una mejora.** Fue lo que impidió dar por bueno el modelo B en validación, y lo que hizo visible que la mejora de la temperatura sí superaba el ruido — que es justo por lo que hubo que descartarla por otro motivo y no por el número.
-
----
-
-## Detección de anomalías
-
-La segunda mitad del proyecto. Con un modelo de previsión funcionando, las horas donde la realidad se aparta mucho de lo esperado son candidatas a investigar.
-
-El método actual es deliberadamente simple: se calcula, para cada combinación de tipo de día y hora, cuánto se desvía normalmente la realidad de la previsión, y se marcan las horas que se salen de ese patrón habitual.
-
-Sobre los casos encontrados hasta ahora:
-
-- **El apagón del 28 de abril de 2025** aparece, como era de esperar.
-- **Un episodio del 11 de junio** que parecía una anomalía de consumo resultó ser un **fallo de telemetría**: datos corruptos, no comportamiento raro de la red. Esas 8 horas están excluidas de todas las mediciones de este README.
-- El primer grupo de anomalías que investigué a fondo resultó ser también un artefacto de los datos, no un evento real. Es lo normal: la mayor parte de lo que un detector marca al principio son problemas de calidad de datos.
+Es que en tres años solo hay **7 puentes**, unas 168 horas sobre 26.000. No hay casos suficientes para que el modelo aprenda nada de ellos.
 
 ---
 
 ## Límites, y cosas que no se ven en los números
 
-Un proyecto sin esta sección no es honesto.
 
 ### La subida de 2026 queda fuera de lo que el histórico permite aprender
 
 Los dos modelos predicen por debajo de la realidad: 755 MW de media el modelo A, 413 el modelo B.
 
-La razón es que 2026 consume unos 2.237 MW más de media que los años de entrenamiento, y un árbol de decisión no extrapola: no puede predecir un valor por encima de todo lo que ha visto. Es comprobable por otra vía — al forzar el árbol más simple, el sesgo no baja, sube. No es un problema de ajuste, es el techo de la herramienta.
+La razón es que 2026 consume unos 2.237 MW más de media que los años de entrenamiento, y un árbol de decisión no extrapola: no puede predecir un valor por encima de todo lo que ha visto. Es comprobable por otra vía: al forzar el árbol más simple, el sesgo no baja, sube. No es un problema de ajuste, es el techo de la herramienta.
 
 Y hay un fleco abierto sobre el tamaño de esa subida. Al agregar mi serie por meses y compararla con las cifras que REE publica en sus notas de prensa, los años de entrenamiento coinciden y 2026 se separa: mi serie crece entre el 3 y el 12 % mes a mes sobre 2025, mientras las cifras publicadas dan −1,1 % en abril y +0,5 % en junio. Junio de 2025 coincide al 0,03 %, así que el método de agregación es correcto y lo que cambia está en 2026.
-
-No sé si la diferencia está en qué agrega exactamente el indicador que descargo o en la demanda misma, y he escrito al operador del sistema para preguntarlo. Mientras no haya respuesta se queda como límite declarado y no corrijo nada: los errores medios comparan real y previsión de la **misma fuente y el mismo alcance** en cada periodo, así que son internamente consistentes. Lo que está en el aire es cuánta parte del sesgo es del modelo y cuánta de los datos.
-
-### La comparación con REE no mide lo mismo
-
-La previsión oficial acierta a 266 MW. La mía, a 1.005 en el mejor caso. No son el mismo problema y presentarlo como una derrota sería un error de encuadre.
-
-Mi modelo predice el día completo desde las 00:00 usando el consumo del día anterior. REE, además de emitir su previsión antes de eso, dispone de previsión meteorológica operativa (la que aquí no puedo usar sin fuga) y recalibra continuamente contra el nivel real de consumo, que es exactamente lo que un árbol no sabe hacer.
-
-Queda una pregunta abierta sobre la serie oficial: no he verificado si el indicador que descargo es la previsión del día anterior congelada o una serie que se sobrescribe con reajustes posteriores. La resolución de la serie es de cinco minutos, pero eso es su granularidad temporal, no prueba de que se reemita cada cinco minutos. Está en la misma consulta cursada al operador. **El 31 % de mejora sobre persistencia no depende de esto en absoluto.**
-
-### Dos cosas más
-
-**El modelo asume que el día anterior se conoce completo.** Usa el consumo de ayer a la misma hora, lo que implica que a las 00:00 ya tengo las 24 horas de ayer cerradas. Es defendible para un ejercicio, pero un margen de emisión realista obligaría a otra arquitectura.
-
-**El trozo de 2026 se leyó cinco veces**: cuatro durante la exploración del modelo B, tres de ellas con una configuración fijada a mano en vez de elegida en validación, y una quinta el 20/8/2026 en el sandbox de `lag_168` (v2), sobre un entrenamiento que no descartaba el prefijo de NaN inicial. Esa quinta lectura no se usa como criterio de nada ni entra en ningún resultado publicado aquí. El 1.005 MW es correcto, pero tiene algo menos de estatus como "dato nunca visto" que el 1.263 del modelo A.
-
-**Durante el apagón de abril de 2025, la previsión oficial se fue a cero unas 35 horas.** No se puede comparar un modelo contra una previsión que no existe, así que ese tramo queda fuera del benchmark.
 
 ---
 
@@ -189,56 +105,16 @@ Una acción programada de GitHub se dispara cada mañana en torno a las 05:45 UT
 1. **Predice** el día natural siguiente al último dato disponible — 23, 24 o 25 horas según el cambio de hora, nunca 24 fijas.
 2. **Evalúa** las predicciones anteriores contra el consumo real, para las horas que ya tienen dato cerrado.
 
-El orden importa y los commits separados también. Si la evaluación falla, la predicción del día ya está guardada; una previsión que no se emitió a tiempo no se puede recuperar honestamente después. Al revés no se cumple: la evaluación se autocura sola al día siguiente, porque cada hora sin dato queda pendiente y se vuelve a intentar.
+Si la evaluación falla, la predicción del día ya está guardada.
 
 El modelo **está congelado**. No se re-entrena, no se ajusta y no se sustituye: el pipeline es infraestructura alrededor de un modelo fijo, y su valor está en que los números que produce no los ha elegido nadie.
 
-### Qué se guarda, y por qué así
-
-Tres históricos que solo crecen y nunca se editan: las predicciones emitidas, los errores evaluados y —esto es lo menos obvio— **la entrada exacta que produjo cada predicción**. Sin lo tercero, dentro de tres meses no se podría distinguir "el modelo falló" de "el modelo leyó un dato malo", porque el runner es efímero y la descarga cruda no sobrevive a la corrida.
-
-Corregir una fila equivocada se hace añadiendo otra fila, nunca reescribiendo la anterior. Hay un precedente: la primera corrida se lanzó a mano por la tarde, para un día ya casi transcurrido. La fila era técnicamente correcta, pero se había emitido cuando el resultado ya existía, y todo el argumento del pipeline es que no. Se retiró revirtiendo el commit, no editando el fichero, y **el 13 de agosto es un hueco permanente en la serie**. Es lo correcto: ese día nunca tuvo una previsión emitida a tiempo.
 
 ### Dos cortes que no se mezclan nunca
 
 Cuando la previsión se emite a las 05:45, unas ocho horas del día que predice ya han pasado. Esas horas se guardan, porque sirven para diagnosticar, pero **no cuentan como previsión** y no se agregan nunca con las demás en un mismo número. Cada fila lleva anotado cuántas horas de antelación tenía, así que el corte se recalcula en cada lectura en vez de quedar congelado en el código.
 
 Las horas realmente publicadas —las que se predijeron antes de que ocurrieran— son 16 al día.
-
-### El error en producción es mayor que el de la tabla de arriba, y se sabe por qué
-
-**No son comparables.** El 1.263 MW se midió sobre 4.336 horas de un semestre entero. La métrica viva se calcula sobre ventanas móviles de días, y hay dos limitaciones conocidas del modelo que la empujan hacia arriba:
-
-- **El arranque de la semana.** El modelo sabe qué tipo de día está prediciendo y cuánto se consumió ayer a la misma hora, pero **no sabe de qué tipo de día viene ese punto de partida**. Cuando el ancla es un domingo y el objetivo un lunes laborable, arranca de un nivel demasiado bajo y no tiene forma de corregirlo. En el histórico el caso frecuente es viernes → sábado, que aprende bien; los otros no. Como toda ventana de siete días contiene exactamente un lunes, esto no es un transitorio que desaparezca con más datos: es el suelo del modelo.
-- **El techo del árbol.** Ya está explicado más arriba en abstracto; en producción tiene un número exacto. La predicción máxima que el modelo puede emitir es **38.861,1 MW**, el promedio de su hoja más alta. Dos cifras distintas miden ese techo y conviene no confundirlas: entre las horas ya evaluadas en producción, la demanda real superó los 40.000 MW en dos ocasiones; pero sobre la serie horaria de julio y agosto de 2026 completa —incluido julio, cuando el modelo aún no emitía— hay **299 horas por encima del techo**, con un máximo de 42.742,3 MW el 8 de julio. En esas horas el modelo se habría quedado corto por casi 4.000 MW, un 10 %, de forma sistemática y por construcción.
-
-La primera se podría atacar con otra variable. La segunda no: ninguna variable nueva arregla que un árbol de decisión no extrapole. Haría falta otra familia de modelo, y eso es otro proyecto.
-
-### La comparación que sí es justa: contra el operador del sistema, en las mismas horas
-
-Comparar el error de producción contra el 1.263 MW del ejercicio histórico no dice gran cosa: son censos distintos. La comparación que sí informa es contra la previsión oficial de REE **restringida exactamente a las mismas horas** que el modelo ha publicado.
-
-Sobre las **127 horas publicadas entre el 14 y el 21 de agosto de 2026** — las que el modelo predijo antes de que ocurrieran:
-
-| | Error medio | Sesgo |
-|---|---|---|
-| Modelo A, en producción | **2.000,6 MW** | +898,8 MW |
-| Previsión oficial de REE, mismas horas | **384,8 MW** | +25,4 MW |
-
-Un factor 5,2. El censo va escrito dentro de la frase a propósito: ambas cifras se mueven cada día que el pipeline emite, y un número sin su ventana caduca en 24 horas.
-
-Dos cosas que el desglose diario deja ver y el agregado esconde:
-
-- **El 17 de agosto, el peor día del modelo con diferencia (5.650,8 MW), es el mejor día de REE de toda la serie (258,1 MW).** El día no era difícil de predecir. Falló el modelo, por la limitación del arranque descrita arriba: era un lunes con ancla en domingo. Tener un tercero prediciendo el mismo día es lo que permite separar "día raro" de "modelo con un hueco estructural".
-- **El 20 de agosto es el peor día de los dos** (1.837,0 el modelo, 680,1 REE, casi el doble de su media) y el único en que ambos sobrepredicen. Ese día sí era raro: la ola de calor rompiéndose. Es un fallo del que nadie está a salvo, y no es del mismo tipo que el anterior.
-
-Para contexto, la previsión oficial acierta a 265,8 MW sobre el histórico completo. Que en agosto se le vaya a 384,8 dice que el mes fue difícil para todos; la distancia relativa se mantiene.
-
-**Mientras la ventana no cubra al menos siete fechas distintas con horas publicadas, no se publica ningún error medio.** Se muestra un guion. Un error medio calculado sobre tres días es una mentira con formato de métrica, y preferimos el hueco visible al número tranquilizador.
-
-### Cómo falla
-
-Sin `try/except` amplios, sin reintentos silenciosos, sin pasos marcados como "ignorar si falla". Si la API no responde, si una hora llega incompleta o si un valor cae fuera del rango físicamente posible de la demanda peninsular, el proceso se detiene en rojo y no escribe nada a medias. Un fallo visible cuesta cinco minutos; un fallo silencioso contamina un histórico que solo crece.
 
 ---
 
@@ -285,7 +161,3 @@ tests/           test de paridad notebook ↔ src, y tests del pipeline
 ## Licencia
 
 MIT. El código es libre; los datos de origen conservan las condiciones de sus proveedores, que exigen reconocimiento de la fuente.
-
----
-
-*Fase 1 de tres. La Fase 2 usará este modelo para proyectar tensiones en la red bajo escenarios de shock geopolítico y climático.*
