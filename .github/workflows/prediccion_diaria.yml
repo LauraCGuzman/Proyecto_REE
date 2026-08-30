@@ -2,7 +2,7 @@ name: Predicción diaria REE
 
 on:
   schedule:
-    - cron: '17 5 * * *'
+    - cron: '17 1 * * *'
   workflow_dispatch:
 
 permissions:
