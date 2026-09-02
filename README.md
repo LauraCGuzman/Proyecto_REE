@@ -13,7 +13,7 @@ Mean absolute error, in megawatts. All figures measured on the **same 4,336 hour
 | | MAE | What it is |
 |---|---|---|
 | Calendar means | 2,793 MW | The starting point: "a Tuesday in March at 08:00 consumes, on average, this" |
-| **Persistence** | **1,843 MW** | The actual benchmark: "today at this hour consumes the same as yesterday at this hour" |
+| **Persistence** | **1,840 MW** | The actual benchmark: "today at this hour consumes the same as yesterday at this hour" |
 | **Model v1** | **1,263 MW** | Calendar + demand at the same hour yesterday (`lag_24`) — **31 % over persistence** |
 | **Model v2** | **1,005 MW** | Adds demand at the same hour one week earlier (`lag_168`) — 45 % over persistence |
 | REE official forecast | 266 MW | Context, not a target — see *Limits* |
@@ -107,7 +107,7 @@ Error absoluto medio, en megavatios. Todas las cifras medidas sobre las **mismas
 | | MAE | Qué es |
 |---|---|---|
 | Medias por calendario | 2.793 MW | El punto de partida: «un martes de marzo a las 8:00 se consume, de media, esto» |
-| **Persistencia** | **1.843 MW** | La vara de medir real: «hoy a esta hora se consume lo mismo que ayer a esta hora» |
+| **Persistencia** | **1.840 MW** | La vara de medir real: «hoy a esta hora se consume lo mismo que ayer a esta hora» |
 | **Modelo v1** | **1.263 MW** | Calendario + demanda de ayer a la misma hora (`lag_24`) — **31 % sobre persistencia** |
 | **Modelo v2** | **1.005 MW** | Añade la demanda de hace una semana a la misma hora (`lag_168`) — 45 % sobre persistencia |
 | Previsión oficial de REE | 266 MW | Contexto, no objetivo — ver *Límites* |
