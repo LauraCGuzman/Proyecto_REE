@@ -1,163 +1,184 @@
-# Previsión de demanda eléctrica española y detección de anomalías
+# Spanish Electricity Demand — Forecasting Model & Daily Pipeline
 
-## Qué hace este proyecto
+Red Eléctrica de España (REE) publishes two things every hour: the electricity actually consumed and the volume it had forecast. This project builds an independent forecasting model on that public data, measures it against baselines, and runs it daily in production.
 
-Red Eléctrica de España publica cada hora dos cosas: cuánta electricidad se ha consumido de verdad, y cuánta habían previsto que se iba a consumir. Este proyecto construye un modelo propio de previsión, y lo compara con el oficial.
+> **Status: evaluation phase.** Two models emit a forecast every day. The comparison between them is open and is governed by criteria registered in writing before any production data was seen.
 
 ---
 
-## El resultado, de un vistazo
+## Results on historical data
 
-Error medio de previsión, en megavatios. Menos es mejor.
+Mean absolute error, in megawatts. All figures measured on the **same 4,336 hours of H1 2026**, never seen during training.
 
-| | Error medio | Qué es |
+| | MAE | What it is |
 |---|---|---|
-| Tabla de medias por calendario | 2.793 MW | El punto de partida: "un martes de marzo a las 8 de la mañana, de media, se consume esto" |
-| Persistencia | 1.840 MW | La referencia dura: "hoy a esta hora se consumirá lo mismo que ayer a esta hora" |
-| **Modelo A** | **1.263 MW** | Calendario más el consumo de ayer a la misma hora |
-| **Modelo B** | **1.005 MW** | Añade además el consumo de hace una semana a la misma hora |
-| Previsión oficial de REE | 266 MW | No es el objetivo. Ver la sección de límites |
+| Calendar means | 2,793 MW | The starting point: "a Tuesday in March at 08:00 consumes, on average, this" |
+| **Persistence** | **1,843 MW** | The actual benchmark: "today at this hour consumes the same as yesterday at this hour" |
+| **Model v1** | **1,263 MW** | Calendar + demand at the same hour yesterday (`lag_24`) — **31 % over persistence** |
+| **Model v2** | **1,005 MW** | Adds demand at the same hour one week earlier (`lag_168`) — 45 % over persistence |
+| REE official forecast | 266 MW | Context, not a target — see *Limits* |
 
-Todos los números están medidos sobre el mismo conjunto de horas del primer semestre de 2026: **4.336 horas** que el modelo no había visto nunca.
+The system operator's forecast does not constitute a valid comparison reference, as it operates under a different scope and different information sources from those available to this project. The model is therefore evaluated using persistence as its baseline.
 
----
+**Split:** 2023–2024 train · 2025 validation · H1 2026 test. Always past → future; no model is trained on data later than what it predicts.
 
-## Cómo se ha medido
-
-Los datos se parten en tres trozos, y cada trozo tiene un trabajo distinto:
-
-- **2023–2024 — train.** 
-- **2025 — evaluate** 
-- **P 2026 — test**
-
-El orden es siempre pasado → futuro. Nunca se entrena con datos posteriores a los que se predicen, porque eso daría un resultado buenísimo y completamente falso.
-
+**Rationale for the dual model (v1 and v2):** Both versions were evaluated by temporal validation with five sliding partitions (rolling validation), producing a technical tie (differences of 10–14 MW against a method noise floor of ~20 MW). On the 2026 test set, however, v2 outperforms v1 by 258 MW and shows a significantly less skewed error distribution. Since the standard validation protocol failed to discriminate this behaviour, the decision was to keep and deploy both models in parallel.
 
 ---
 
-## Por qué se publican dos modelos y no uno
+## Production
 
-Lo normal sería quedarse con el que da mejor número.
+Automated since **14 August 2026** (GitHub Actions at ~05:45 UTC): emits a daily prediction, evaluates it against REE's closing data in separate commits, and freezes artefacts with no retraining.
 
-**Modelo A** usa el consumo de ayer a la misma hora.
-**Modelo B** añade el consumo de hace exactamente una semana a la misma hora.
+* **Published vs. diagnostic:** Hours that have already elapsed when the forecast is issued are recorded for diagnosis only and excluded from the metric. Active window: **16 hours per day**.
+* **Current status:** Live metric in [`reports/estado_pipeline.md`](reports/estado_pipeline.md).
 
-La razón para probar el B: el consumo de un lunes se parece más al del lunes anterior que al del domingo. Sonaba prometedor.
+| Model | MAE (30d) | Mean bias | Published hours | Dates |
+|---|---|---|---|---|
+| v1 | 1,995 MW | +1,359 MW | 274 | 19 |
+| v2 | 1,677 MW | +1,204 MW | 147 | 11 |
 
-Y aquí está el problema. Los dos modelos se compararon **cinco veces**, siempre sin tocar 2026: una vez con el corte principal (entrenar con 2023–2024, decidir con 2025) y cuatro veces más moviendo ese corte hacia atrás, de forma que cada comparación entrena con menos historia y evalúa en un semestre distinto de 2024 o 2025. En las cinco salieron empatados: diferencias de 10 a 14 MW cuando el propio método tiene un margen de error de unos 20. Es decir, indistinguibles.
+*Note: different windows and counts (not a like-for-like comparison until October).*
 
-Pero al medirlos sobre 2026, el modelo B es **258 MW mejor** y además su error está mucho menos desviado hacia un lado.
-
----
-
-## Lo que se quedó fuera
-
-Tres cosas se probaron a fondo y no entraron en el modelo publicado. Están aquí porque el proyecto no va de acertar, va de averiguar. La primera es la que más me enseñó, y no por lo que parece.
-
-### La temperatura ayudaba, y la quité
-
-Construí una tubería de datos completa con **8 estaciones meteorológicas** de AEMET repartidas por la península, agrupadas en cuatro zonas climáticas y ponderadas por población.
-
-Y funciona. En validación baja el error de 986 a 968 MW: una mejora de 18 MW cuando el ruido del método es de 12. Pasa el criterio.
-
-La columna que construí es temperatura **observada**, la que se conoce *después*. Un modelo que predice el día siguiente a las 00:00 tiene la previsión meteorológica, que trae su propio error encima. Medir con la observada y presentar el resultado como rendimiento en producción es fuga de información.
-
-Para reconstruirlo bien haría falta el archivo de previsiones meteorológicas, no el de observaciones. La API pública de AEMET sirve lo segundo, no lo primero.
-
-
-### Los modelos más sofisticados tampoco
-
-Probé *gradient boosting*, una técnica bastante más potente que el árbol de decisión que uso. Aprende los datos de entrenamiento mucho mejor (error de 795 MW) y falla igual o peor con datos nuevos (1.686 MW).
-
-Ese desajuste tiene un nombre: memorizar en vez de aprender. Y lo que dice es que la parte del consumo que no explican el calendario y los consumos anteriores es en gran medida **ruido**. No hay más señal que sacar por ahí. Un modelo más complejo no la encuentra porque no está.
-
-### Los puentes: no hay datos suficientes
-
-Tenía una variable que marca los días puente. El modelo **nunca la usó**, literalmente cero decisiones basadas en ella, en cinco mediciones independientes.
-
-Es que en tres años solo hay **7 puentes**, unas 168 horas sobre 26.000. No hay casos suficientes para que el modelo aprenda nada de ellos.
+### Why production MAE exceeds the notebook's
+1. **Week start:** With no day type for *D−1* as an anchor, the `non-working → working` transition (Mondays) raises the MAE to 5,651 MW (vs. 1,153 MW for `working → working`).
+2. **Extrapolation ceiling:** Decision trees do not extrapolate beyond their training range (e.g. v1 capped at 38,861 MW against real demand above 40,000 MW in August).
 
 ---
 
-## Límites, y cosas que no se ven en los números
+## Tested and discarded
 
-
-### La subida de 2026 queda fuera de lo que el histórico permite aprender
-
-Los dos modelos predicen por debajo de la realidad: 755 MW de media el modelo A, 413 el modelo B.
-
-La razón es que 2026 consume unos 2.237 MW más de media que los años de entrenamiento, y un árbol de decisión no extrapola: no puede predecir un valor por encima de todo lo que ha visto. Es comprobable por otra vía: al forzar el árbol más simple, el sesgo no baja, sube. No es un problema de ajuste, es el techo de la herramienta.
-
-Y hay un fleco abierto sobre el tamaño de esa subida. Al agregar mi serie por meses y compararla con las cifras que REE publica en sus notas de prensa, los años de entrenamiento coinciden y 2026 se separa: mi serie crece entre el 3 y el 12 % mes a mes sobre 2025, mientras las cifras publicadas dan −1,1 % en abril y +0,5 % en junio. Junio de 2025 coincide al 0,03 %, así que el método de agregación es correcto y lo que cambia está en 2026.
+* **Temperature (AEMET):** Improved validation (986 to 968 MW), but using the observed value instead of the weather forecast implied information leakage.
+* **Gradient boosting:** Better fit in training (795 MW) but worse generalisation (1,686 MW), showing that the non-modellable residual error is pure noise.
+* **Bridge days:** 7 cases in 3 years (~168 hours out of 26,000); the model ignored the variable for lack of sample volume.
 
 ---
 
-## El modelo en producción
+## Limits
 
-Desde el **14 de agosto de 2026** el Modelo A emite una previsión al día, sin intervención manual, y compara cada predicción con el dato real cuando la red lo publica. Todo lo anterior de este README es un ejercicio medido sobre datos históricos; esta sección es lo que ocurre cuando el mismo modelo tiene que funcionar todos los días.
-
-**Métrica viva, actualizada en cada corrida:** [`reports/estado_pipeline.md`](reports/estado_pipeline.md).
-
-### Cómo funciona
-
-Una acción programada de GitHub se dispara cada mañana en torno a las 05:45 UTC y hace dos cosas, en este orden y en dos commits separados:
-
-1. **Predice** el día natural siguiente al último dato disponible — 23, 24 o 25 horas según el cambio de hora, nunca 24 fijas.
-2. **Evalúa** las predicciones anteriores contra el consumo real, para las horas que ya tienen dato cerrado.
-
-Si la evaluación falla, la predicción del día ya está guardada.
-
-El modelo **está congelado**. No se re-entrena, no se ajusta y no se sustituye: el pipeline es infraestructura alrededor de un modelo fijo, y su valor está en que los números que produce no los ha elegido nadie.
-
-
-### Dos cortes que no se mezclan nunca
-
-Cuando la previsión se emite a las 05:45, unas ocho horas del día que predice ya han pasado. Esas horas se guardan, porque sirven para diagnosticar, pero **no cuentan como previsión** y no se agregan nunca con las demás en un mismo número. Cada fila lleva anotado cuántas horas de antelación tenía, así que el corte se recalcula en cada lectura en vez de quedar congelado en el código.
-
-Las horas realmente publicadas —las que se predijeron antes de que ocurrieran— son 16 al día.
+* **Structural bias:** Generalised underestimation (+755 MW for v1, +413 MW for v2 on test) against a 2026 with higher average demand.
+* **Statistical discrepancy:** The year-on-year growth computed here differs from REE's official press releases in certain months. The aggregation method reproduces the published figures for the training years, so the divergence is confined to 2026. Cause undetermined; documented as an open limit.
 
 ---
+
+## Data & stack
+
+* **Sources:** e·sios API (REE demand and official forecast, 2023–2026), AEMET OpenData and working calendars.
+* **Stack:** Python, pandas, scikit-learn, Plotly. Decision tree chosen for explainability.
+* **Quality control:** Ingestion schema validation and a numeric regression *gate* that blocks changes if any of 17 key reference metrics move.
+
+---
+
+## Repository
+
+```text
+data/raw/           raw downloads (not versioned)
+data/processed/     clean series
+data/               daily pipeline history
+src/                clients, validation and utilities
+notebooks/          analysis and modelling
+pipeline/           daily prediction/evaluation scripts
+reports/            dynamic pipeline status
+scripts/            numeric regression gate
+modelos/            serialised artefacts and reference snapshot
+tests/              unit and parity tests
+.github/            CI/CD automation
+```
+
+Design decisions not covered here are documented in the notebook. For anything further, get in touch.
+
+**Licence:** MIT. The code is free; source data keeps the conditions of its providers, which require attribution.
+
+---
+---
+
+# Demanda eléctrica española — modelo de previsión y pipeline diario
+
+Red Eléctrica de España (REE) publica cada hora dos cosas: la electricidad realmente consumida y la que había previsto consumir. Este proyecto construye un modelo propio de previsión sobre esos datos públicos, lo mide contra baselines y lo ejecuta a diario en producción.
+
+> **Estado: fase de evaluación.** Dos modelos emiten previsión cada día. La comparación entre ambos está abierta y la gobiernan criterios registrados por escrito antes de ver ningún dato de producción.
+
+---
+
+## Resultados sobre datos históricos
+
+Error absoluto medio, en megavatios. Todas las cifras medidas sobre las **mismas 4.336 horas del primer semestre de 2026**, nunca vistas en entrenamiento.
+
+| | MAE | Qué es |
+|---|---|---|
+| Medias por calendario | 2.793 MW | El punto de partida: «un martes de marzo a las 8:00 se consume, de media, esto» |
+| **Persistencia** | **1.843 MW** | La vara de medir real: «hoy a esta hora se consume lo mismo que ayer a esta hora» |
+| **Modelo v1** | **1.263 MW** | Calendario + demanda de ayer a la misma hora (`lag_24`) — **31 % sobre persistencia** |
+| **Modelo v2** | **1.005 MW** | Añade la demanda de hace una semana a la misma hora (`lag_168`) — 45 % sobre persistencia |
+| Previsión oficial de REE | 266 MW | Contexto, no objetivo — ver *Límites* |
+
+La previsión del operador del sistema no constituye una referencia válida de comparación, ya que opera bajo un alcance y unas fuentes de información distintas a las de este proyecto. Por este motivo, el modelo se evalúa utilizando la persistencia como baseline.
+
+**Partición:** 2023–2024 train · 2025 validación · 1S 2026 test. Siempre pasado → futuro; ningún modelo se entrena con datos posteriores a los que predice.
+
+**Justificación de la doble modelización (v1 y v2):** Ambas versiones se evaluaron mediante validación temporal con cinco particiones deslizantes (rolling validation), obteniendo un empate técnico (diferencias de 10–14 MW frente a un ruido de método de ~20 MW). Sin embargo, en el conjunto de test de 2026, v2 supera a v1 en 258 MW y presenta una distribución de errores significativamente menos sesgada. Dado que el protocolo de validación tradicional no logró discriminar este comportamiento, se ha optado por mantener y desplegar ambos modelos en paralelo.
+
+---
+
+## Producción
+
+Automatizado desde el **14 de agosto de 2026** (GitHub Actions a ~05:45 UTC): emite predicción diaria, evalúa con el cierre real de REE en commits separados y congela artefactos sin reentrenamiento.
+
+* **Publicado vs. Diagnóstico:** Las horas transcurridas antes de emitir la previsión se registran solo para diagnóstico y se excluyen del cálculo. Ventana activa: **16 horas al día**.
+* **Estado actual:** Métrica en [`reports/estado_pipeline.md`](reports/estado_pipeline.md).
+
+| Modelo | MAE (30d) | Sesgo medio | Horas publicadas | Fechas |
+|---|---|---|---|---|
+| v1 | 1.995 MW | +1.359 MW | 274 | 19 |
+| v2 | 1.677 MW | +1.204 MW | 147 | 11 |
+
+*Nota: Ventanas y recuentos distintos (comparación no homogénea hasta octubre).*
+
+### Por qué el MAE de producción supera al del notebook
+1. **Arranque de la semana:** Sin el tipo de día de *D−1* como ancla, la transición `no laborable → laborable` (lunes) eleva el MAE a 5.651 MW (vs. 1.153 MW en `laborable → laborable`).
+2. **Techo de extrapolación:** Los árboles de decisión no extrapolan fuera de rango (ej. v1 limitado a 38.861 MW con demandas reales >40.000 MW en agosto).
+
+---
+
+## Probado y descartado
+
+* **Temperatura (AEMET):** Mejoraba la validación (986 a 968 MW), pero usar la observación real en lugar de la previsión meteorológica implicaba una fuga de información.
+* **Gradient boosting:** Mejor ajuste en entrenamiento (795 MW) pero peor generalización (1.686 MW), evidenciando que el error residual no modelable es ruido puro.
+* **Días puente:** 7 casos en 3 años (~168 horas de 26.000); el modelo ignoró la variable por falta de volumen muestral.
+
+---
+
+## Límites
+
+* **Sesgo estructural:** Subestimación generalizada (+755 MW en v1, +413 MW en v2 en test) ante un 2026 con mayor demanda media.
+* **Discrepancia estadística:** El crecimiento interanual calculado difiere de las notas oficiales de REE en ciertos meses. El método de agregación reproduce las cifras publicadas en los años de entrenamiento, luego la divergencia se circunscribe a 2026. Causa sin determinar; documentado como límite abierto.
 
 ---
 
 ## Datos y stack
 
-**Fuentes**
-
-- **Red Eléctrica de España**, API e·sios: consumo real y previsión oficial, resolución de 5 minutos agregada a horaria, enero 2023 – junio 2026. Datos de e·sios, elaboración propia.
-- **AEMET OpenData**: temperaturas diarias de 8 estaciones de aeropuerto. Información elaborada a partir de datos de la Agencia Estatal de Meteorología (AEMET).
-- Calendario laboral nacional y autonómico, con festivos y puentes.
-
-**Herramientas**
-
-Python, pandas, scikit-learn, plotly. Sin dependencias exóticas: el modelo es un árbol de decisión, y la elección es deliberada — se puede explicar entero.
-
-**Control de calidad**
-
-La ingesta valida el número de filas esperadas antes de guardar nada, distingue huecos reales de datos corruptos, y se detiene si algo no cuadra en vez de continuar en silencio. Varios de los hallazgos de este proyecto salieron de comprobaciones que fallaron cuando debían.
-
-Encima de eso hay un **gate de regresión numérica**: un script que reejecuta el notebook en un intérprete limpio, extrae 17 métricas, los hiperparámetros ganadores, las dispersiones y los conteos de filas por etapa, y los compara contra una foto de referencia guardada en el repositorio. Si un número se mueve, falla. Se escribió para poder reorganizar el código sin romper los resultados en silencio, y hace que "los números siguen siendo los mismos" sea una comprobación y no una impresión.
+* **Fuentes:** API e·sios (demanda y previsión oficial de REE, 2023–2026), AEMET OpenData y calendarios laborales.
+* **Stack:** Python, pandas, scikit-learn, Plotly. Árbol de decisión por explicabilidad.
+* **Control de calidad:** Validación de esquemas de ingesta y *gate* de regresión numérica que bloquea cambios si varían 17 métricas clave de referencia.
 
 ---
 
-## Estructura del repositorio
+## Repositorio
 
+```text
+data/raw/           descargas crudas (no versionado)
+data/processed/     series limpias
+data/               histórico del pipeline diario
+src/                clientes, validación y utilidades
+notebooks/          análisis y modelado
+pipeline/           scripts diarios de predicción/evaluación
+reports/            estado dinámico del pipeline
+scripts/            gate de regresión numérica
+modelos/            artefactos serializados y foto de referencia
+tests/              tests unitarios y de paridad
+.github/            automatización CI/CD
 ```
-data/raw/        descargas crudas de e·sios y AEMET (no versionado)
-data/processed/  series limpias y consolidadas (versionado: git hace de control de cambios)
-data/            históricos del pipeline diario: predicciones, errores y anclas usadas
-src/             clientes de API, rutas, validación de calidad, utilidades de modelado
-notebooks/       modelo de demanda y detección de anomalías
-pipeline/        scripts de predicción y evaluación diarias
-reports/         estado del pipeline, regenerado en cada corrida
-.github/         acción programada que ejecuta el pipeline
-scripts/         gate de regresión numérica
-modelos/         modelo serializado y foto de referencia de los números
-tests/           test de paridad notebook ↔ src, y tests del pipeline
-```
 
----
+Las decisiones de diseño que no aparecen aquí están documentadas en el notebook. Para cualquier cosa más allá de eso, contacto directo.
 
-## Licencia
-
-MIT. El código es libre; los datos de origen conservan las condiciones de sus proveedores, que exigen reconocimiento de la fuente.
+**Licencia:** MIT. El código es libre; los datos de origen conservan las condiciones de sus proveedores, que exigen reconocimiento de la fuente.
