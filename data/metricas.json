@@ -1,31 +1,31 @@
 {
   "v1": {
-    "actualizado_utc": "2026-10-16T05:55:52Z",
+    "actualizado_utc": "2026-10-17T05:39:38Z",
     "modelo": "v1",
     "muestra_insuficiente": false,
     "publicado": {
       "criterio": "h_adelanto_h > 0",
       "ventanas": {
         "7d": {
-          "mae": 1563.77,
-          "sesgo_medio": 1065.99,
-          "n_horas": 101,
+          "mae": 1434.14,
+          "sesgo_medio": 1169.0,
+          "n_horas": 103,
           "cobertura_dias": 6.5,
           "dias_cubiertos": 7
         },
         "30d": {
-          "mae": 1345.22,
-          "sesgo_medio": 800.34,
-          "n_horas": 438,
+          "mae": 1300.78,
+          "sesgo_medio": 845.62,
+          "n_horas": 439,
           "cobertura_dias": 29.6,
           "dias_cubiertos": 30
         },
         "90d": {
-          "mae": 1799.01,
-          "sesgo_medio": 1223.99,
-          "n_horas": 911,
-          "cobertura_dias": 62.6,
-          "dias_cubiertos": 62
+          "mae": 1775.94,
+          "sesgo_medio": 1197.6,
+          "n_horas": 927,
+          "cobertura_dias": 63.6,
+          "dias_cubiertos": 63
         }
       }
     },
@@ -33,25 +33,25 @@
       "criterio": "h_adelanto_h <= 0",
       "ventanas": {
         "7d": {
-          "mae": 591.83,
-          "sesgo_medio": 413.41,
-          "n_horas": 66,
+          "mae": 575.08,
+          "sesgo_medio": 445.5,
+          "n_horas": 64,
           "cobertura_dias": 6.9,
           "dias_cubiertos": 8
         },
         "30d": {
-          "mae": 563.23,
-          "sesgo_medio": 101.77,
-          "n_horas": 281,
+          "mae": 550.39,
+          "sesgo_medio": 124.5,
+          "n_horas": 280,
           "cobertura_dias": 29.9,
           "dias_cubiertos": 31
         },
         "90d": {
-          "mae": 689.66,
-          "sesgo_medio": 178.54,
-          "n_horas": 584,
-          "cobertura_dias": 63.2,
-          "dias_cubiertos": 65
+          "mae": 683.87,
+          "sesgo_medio": 176.15,
+          "n_horas": 592,
+          "cobertura_dias": 64.2,
+          "dias_cubiertos": 66
         }
       }
     },
@@ -62,32 +62,32 @@
     }
   },
   "v2": {
-    "actualizado_utc": "2026-10-16T05:55:52Z",
+    "actualizado_utc": "2026-10-17T05:39:38Z",
     "modelo": "v2",
     "muestra_insuficiente": false,
     "publicado": {
       "criterio": "h_adelanto_h > 0",
       "ventanas": {
         "7d": {
-          "mae": 1323.93,
-          "sesgo_medio": 651.71,
-          "n_horas": 101,
+          "mae": 1144.89,
+          "sesgo_medio": 867.16,
+          "n_horas": 103,
           "cobertura_dias": 6.5,
           "dias_cubiertos": 7
         },
         "30d": {
-          "mae": 1251.04,
-          "sesgo_medio": 482.19,
-          "n_horas": 438,
+          "mae": 1197.83,
+          "sesgo_medio": 549.0,
+          "n_horas": 439,
           "cobertura_dias": 29.6,
           "dias_cubiertos": 30
         },
         "90d": {
-          "mae": 1642.16,
-          "sesgo_medio": 968.26,
-          "n_horas": 784,
-          "cobertura_dias": 54.6,
-          "dias_cubiertos": 54
+          "mae": 1616.68,
+          "sesgo_medio": 951.16,
+          "n_horas": 800,
+          "cobertura_dias": 55.6,
+          "dias_cubiertos": 55
         }
       }
     },
@@ -95,25 +95,25 @@
       "criterio": "h_adelanto_h <= 0",
       "ventanas": {
         "7d": {
-          "mae": 517.79,
-          "sesgo_medio": -16.51,
-          "n_horas": 66,
+          "mae": 482.57,
+          "sesgo_medio": 120.75,
+          "n_horas": 64,
           "cobertura_dias": 6.9,
           "dias_cubiertos": 8
         },
         "30d": {
-          "mae": 565.95,
-          "sesgo_medio": -145.81,
-          "n_horas": 281,
+          "mae": 562.59,
+          "sesgo_medio": -111.14,
+          "n_horas": 280,
           "cobertura_dias": 29.9,
           "dias_cubiertos": 31
         },
         "90d": {
-          "mae": 717.54,
-          "sesgo_medio": -8.73,
-          "n_horas": 519,
-          "cobertura_dias": 55.2,
-          "dias_cubiertos": 57
+          "mae": 715.42,
+          "sesgo_medio": -1.53,
+          "n_horas": 527,
+          "cobertura_dias": 56.2,
+          "dias_cubiertos": 58
         }
       }
     },
