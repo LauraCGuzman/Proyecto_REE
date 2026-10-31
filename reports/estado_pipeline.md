@@ -4,8 +4,8 @@
 
 ## Modelo: v1
 
-Última corrida: 2026-10-30T07:15:44Z
-Fechas presentes en `data/errores.csv` para este modelo (publicadas + diagnóstico): 79
+Última corrida: 2026-10-31T07:04:37Z
+Fechas presentes en `data/errores.csv` para este modelo (publicadas + diagnóstico): 80
 
 ### Métrica publicada (`h_adelanto_h > 0`)
 
@@ -13,9 +13,9 @@ Fechas presentes en `data/errores.csv` para este modelo (publicadas + diagnósti
 
 | Ventana | MAE (MW) | Sesgo medio (MW) | n horas | Fechas cubiertas (gobierna) | Span (días) | MAE test notebook (MW) |
 |---|---|---|---|---|---|---|
-| 7d | 939.61 | +574.93 | 109 | 7 | 6.6 | 1263.02 |
-| 30d | 1052.06 | +550.63 | 445 | 30 | 29.6 | 1263.02 |
-| 90d | 1617.03 | +1073.79 | 1128 | 76 | 76.6 | 1263.02 |
+| 7d | 907.21 | +629.36 | 108 | 7 | 6.6 | 1263.02 |
+| 30d | 1057.92 | +522.65 | 446 | 30 | 29.6 | 1263.02 |
+| 90d | 1604.28 | +1053.83 | 1143 | 77 | 77.6 | 1263.02 |
 
 ### Por qué el MAE de producción no coincide con el del notebook
 
@@ -28,8 +28,8 @@ El MAE de producción de la tabla de arriba no es directamente comparable al 126
 
 ## Modelo: v2
 
-Última corrida: 2026-10-30T07:15:44Z
-Fechas presentes en `data/errores.csv` para este modelo (publicadas + diagnóstico): 71
+Última corrida: 2026-10-31T07:04:37Z
+Fechas presentes en `data/errores.csv` para este modelo (publicadas + diagnóstico): 72
 
 ### Métrica publicada (`h_adelanto_h > 0`)
 
@@ -37,9 +37,9 @@ Fechas presentes en `data/errores.csv` para este modelo (publicadas + diagnósti
 
 | Ventana | MAE (MW) | Sesgo medio (MW) | n horas | Fechas cubiertas (gobierna) | Span (días) |
 |---|---|---|---|---|---|
-| 7d | 882.91 | +431.83 | 109 | 7 | 6.6 |
-| 30d | 1029.33 | +357.44 | 445 | 30 | 29.6 |
-| 90d | 1478.11 | +859.13 | 1001 | 68 | 68.7 |
+| 7d | 821.56 | +554.04 | 108 | 7 | 6.6 |
+| 30d | 1029.93 | +348.50 | 446 | 30 | 29.6 |
+| 90d | 1464.62 | +844.94 | 1016 | 69 | 69.7 |
 
 ### Referencia de notebook
 
